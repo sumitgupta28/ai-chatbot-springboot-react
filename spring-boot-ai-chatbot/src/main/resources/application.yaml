@@ -6,9 +6,16 @@ spring:
     username: postgres
     password: postgres
     driver-class-name: org.postgresql.Driver
-  sql:
-    init:
-      mode: always
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: false
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: 0
   servlet:
     multipart:
       max-file-size: 50MB
@@ -24,7 +31,7 @@ spring:
           temperature: 0.7
     vectorstore:
       pgvector:
-        initialize-schema: true
+        initialize-schema: false
         index-type: HNSW
         distance-type: COSINE_DISTANCE
         dimensions: 384

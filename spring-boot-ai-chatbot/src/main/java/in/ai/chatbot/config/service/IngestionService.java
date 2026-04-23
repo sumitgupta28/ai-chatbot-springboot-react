@@ -1,20 +1,20 @@
 package in.ai.chatbot.config.service;
 
 import in.ai.chatbot.config.model.DocumentInfo;
+import in.ai.chatbot.config.model.DocumentMetadata;
+import in.ai.chatbot.config.repository.DocumentMetadataRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.tika.TikaDocumentReader;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.core.io.ByteArrayResource;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.support.GeneratedKeyHolder;
-import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.sql.PreparedStatement;
-import java.sql.Statement;
 import java.util.List;
 
 @Slf4j
@@ -22,12 +22,15 @@ import java.util.List;
 public class IngestionService {
 
     private final VectorStore vectorStore;
-    private final JdbcTemplate jdbcTemplate;
+    private final DocumentMetadataRepository repository;
     private final TokenTextSplitter splitter = new TokenTextSplitter();
 
-    public IngestionService(VectorStore vectorStore, JdbcTemplate jdbcTemplate) {
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    public IngestionService(VectorStore vectorStore, DocumentMetadataRepository repository) {
         this.vectorStore = vectorStore;
-        this.jdbcTemplate = jdbcTemplate;
+        this.repository = repository;
     }
 
     public DocumentInfo ingest(MultipartFile file) throws Exception {
@@ -49,61 +52,37 @@ public class IngestionService {
         vectorStore.add(chunks);
         log.debug("Stored {} chunks for '{}'", chunks.size(), filename);
 
-        KeyHolder keyHolder = new GeneratedKeyHolder();
-        jdbcTemplate.update(con -> {
-            PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO document_metadata (filename, content_type, file_size, chunk_count) VALUES (?, ?, ?, ?)",
-                    Statement.RETURN_GENERATED_KEYS
-            );
-            ps.setString(1, filename);
-            ps.setString(2, file.getContentType());
-            ps.setLong(3, file.getSize());
-            ps.setInt(4, chunks.size());
-            return ps;
-        }, keyHolder);
-
-        long id = ((Number) keyHolder.getKeys().get("id")).longValue();
-        return fetchById(id);
+        DocumentMetadata saved = repository.save(
+                DocumentMetadata.builder()
+                        .filename(filename)
+                        .contentType(file.getContentType())
+                        .fileSize(file.getSize())
+                        .chunkCount(chunks.size())
+                        .build()
+        );
+        return toDto(saved);
     }
 
     public List<DocumentInfo> listDocuments() {
-        return jdbcTemplate.query(
-                "SELECT * FROM document_metadata ORDER BY upload_time DESC",
-                (rs, rowNum) -> new DocumentInfo(
-                        rs.getLong("id"),
-                        rs.getString("filename"),
-                        rs.getString("content_type"),
-                        rs.getLong("file_size"),
-                        rs.getTimestamp("upload_time").toLocalDateTime(),
-                        rs.getInt("chunk_count")
-                )
-        );
+        return repository.findAllByOrderByUploadTimeDesc()
+                .stream()
+                .map(this::toDto)
+                .toList();
     }
 
+    @Transactional
     public void deleteDocument(Long id) {
-        List<String> filenames = jdbcTemplate.queryForList(
-                "SELECT filename FROM document_metadata WHERE id = ?", String.class, id
-        );
-        if (filenames.isEmpty()) return;
-        jdbcTemplate.update(
-                "DELETE FROM vector_store WHERE metadata->>'filename' = ?", filenames.get(0)
-        );
-        jdbcTemplate.update("DELETE FROM document_metadata WHERE id = ?", id);
-        log.debug("Deleted document id={} ({})", id, filenames.get(0));
+        repository.findById(id).ifPresent(doc -> {
+            entityManager.createNativeQuery(
+                    "DELETE FROM vector_store WHERE metadata->>'filename' = :filename"
+            ).setParameter("filename", doc.getFilename()).executeUpdate();
+            repository.deleteById(id);
+            log.debug("Deleted document id={} ({})", id, doc.getFilename());
+        });
     }
 
-    private DocumentInfo fetchById(long id) {
-        return jdbcTemplate.queryForObject(
-                "SELECT * FROM document_metadata WHERE id = ?",
-                (rs, rowNum) -> new DocumentInfo(
-                        rs.getLong("id"),
-                        rs.getString("filename"),
-                        rs.getString("content_type"),
-                        rs.getLong("file_size"),
-                        rs.getTimestamp("upload_time").toLocalDateTime(),
-                        rs.getInt("chunk_count")
-                ),
-                id
-        );
+    private DocumentInfo toDto(DocumentMetadata m) {
+        return new DocumentInfo(m.getId(), m.getFilename(), m.getContentType(),
+                m.getFileSize(), m.getUploadTime(), m.getChunkCount());
     }
 }
