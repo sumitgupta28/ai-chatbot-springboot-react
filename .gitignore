@@ -1,0 +1,21 @@
+# Spring Boot / Gradle
+spring-boot-ai-chatbot/.gradle/
+spring-boot-ai-chatbot/build/
+spring-boot-ai-chatbot/out/
+!spring-boot-ai-chatbot/gradle/wrapper/gradle-wrapper.jar
+
+# React
+chatbot-ui/node_modules/
+chatbot-ui/build/
+
+# Environment
+.env
+*.env
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
