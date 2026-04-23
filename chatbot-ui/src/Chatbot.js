@@ -1,31 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { IoMdSend } from 'react-icons/io';
 import './Chatbot.css';
+
+const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080';
 
 const Chatbot = () => {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
+    const chatboxRef = useRef(null);
+
+    useEffect(() => {
+        if (chatboxRef.current) {
+            chatboxRef.current.scrollTop = chatboxRef.current.scrollHeight;
+        }
+    }, [messages]);
 
     const sendMessage = async () => {
         if (!input.trim()) return;
 
-        const userMessage = { text: input, sender: 'user' };
-        setMessages(prev => [...prev, userMessage]);
+        const text = input;
+        setMessages(prev => [...prev, { id: crypto.randomUUID(), text, sender: 'user' }]);
         setInput('');
         setLoading(true);
 
         try {
             const response = await axios.get(
-                `http://localhost:8080/ai/chat/string?message=${encodeURIComponent(input)}`
+                `${API_BASE}/ai/chat/string?message=${encodeURIComponent(text)}`
             );
-            const aiMessage = { text: response.data, sender: 'ai' };
-            setMessages(prev => [...prev, aiMessage]);
+            setMessages(prev => [...prev, { id: crypto.randomUUID(), text: response.data, sender: 'ai' }]);
         } catch (error) {
             console.error('Error fetching AI response:', error);
-            const errorMessage = { text: 'Sorry, something went wrong. Please try again.', sender: 'ai' };
-            setMessages(prev => [...prev, errorMessage]);
+            setMessages(prev => [...prev, { id: crypto.randomUUID(), text: 'Sorry, something went wrong. Please try again.', sender: 'ai' }]);
         } finally {
             setLoading(false);
         }
@@ -42,9 +49,9 @@ const Chatbot = () => {
                 <span className="breadcrumb">Home &gt; Chatbot</span>
             </div>
 
-            <div className="chatbox">
-                {messages.map((msg, index) => (
-                    <div key={index} className={`message-container ${msg.sender}`}>
+            <div className="chatbox" ref={chatboxRef} role="log" aria-live="polite">
+                {messages.map((msg) => (
+                    <div key={msg.id} className={`message-container ${msg.sender}`}>
                         {msg.sender === 'ai' && (
                             <img src="/ai-assistant.png" alt="AI Avatar" className="avatar" />
                         )}
@@ -69,8 +76,9 @@ const Chatbot = () => {
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="Type your message..."
+                    disabled={loading}
                 />
-                <button onClick={sendMessage}>
+                <button onClick={sendMessage} disabled={loading} aria-label="Send message">
                     <IoMdSend size={20} />
                 </button>
             </div>
