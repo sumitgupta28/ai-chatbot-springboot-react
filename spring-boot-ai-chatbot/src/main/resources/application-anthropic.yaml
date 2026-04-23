@@ -8,3 +8,7 @@ spring:
         options:
           model: "claude-sonnet-4-6"
           temperature: 0.7
+
+logging:
+  level:
+    in.ai.chatbot: DEBUG
