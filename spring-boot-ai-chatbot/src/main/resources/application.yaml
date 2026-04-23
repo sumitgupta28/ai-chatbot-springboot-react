@@ -1,6 +1,18 @@
 spring:
   application:
     name: "Spring Boot ChatBot"
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ragdb
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+  sql:
+    init:
+      mode: always
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
   ai:
     model:
       chat: ollama
@@ -10,6 +22,18 @@ spring:
         options:
           model: "llama3.2"
           temperature: 0.7
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 384
+
+app:
+  rag:
+    mode: soft                 # 'soft' = fallback to general knowledge | 'strict' = docs only
+    top-k: 5
+    similarity-threshold: 0.7
 
 logging:
   level:
