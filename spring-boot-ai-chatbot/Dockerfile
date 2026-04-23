@@ -5,11 +5,13 @@ WORKDIR /app
 
 COPY gradlew .
 COPY gradle gradle
-COPY build.gradle .
-COPY settings.gradle .
-COPY src src
+RUN chmod +x ./gradlew && ./gradlew --no-daemon wrapper
 
-RUN chmod +x ./gradlew && ./gradlew bootJar -x test
+COPY build.gradle settings.gradle ./
+RUN ./gradlew --no-daemon dependencies --configuration runtimeClasspath
+
+COPY src src
+RUN ./gradlew --no-daemon bootJar -x test
 
 # Stage 2: Run
 FROM eclipse-temurin:17-jre
