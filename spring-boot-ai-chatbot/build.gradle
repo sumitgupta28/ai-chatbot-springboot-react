@@ -28,7 +28,7 @@ dependencies {
 	implementation 'org.springframework.ai:spring-ai-starter-model-ollama'
 	implementation 'org.springframework.ai:spring-ai-starter-model-anthropic'
 	implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
-	implementation 'org.springframework.ai:spring-ai-transformers'
+
 	implementation 'org.springframework.ai:spring-ai-tika-document-reader'
 	runtimeOnly 'org.postgresql:postgresql'
 	implementation 'org.flywaydb:flyway-core'

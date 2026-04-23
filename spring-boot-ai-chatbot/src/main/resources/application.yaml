@@ -29,12 +29,15 @@ spring:
         options:
           model: "llama3.2"
           temperature: 0.7
+      embedding:
+        options:
+          model: "nomic-embed-text"
     vectorstore:
       pgvector:
         initialize-schema: false
         index-type: HNSW
         distance-type: COSINE_DISTANCE
-        dimensions: 384
+        dimensions: 768
 
 app:
   rag:

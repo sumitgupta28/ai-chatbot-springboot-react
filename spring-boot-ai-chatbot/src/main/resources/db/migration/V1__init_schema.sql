@@ -2,12 +2,12 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS hstore;
 
--- Spring AI PGVector store table (384 dims = all-MiniLM-L6-v2 output)
+-- Spring AI PGVector store table (768 dims = nomic-embed-text output)
 CREATE TABLE IF NOT EXISTS vector_store (
     id        UUID    DEFAULT gen_random_uuid() PRIMARY KEY,
     content   TEXT,
     metadata  JSON,
-    embedding VECTOR(384)
+    embedding VECTOR(768)
 );
 
 CREATE INDEX IF NOT EXISTS spring_ai_vector_store_embedding_index
