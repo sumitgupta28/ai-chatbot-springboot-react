@@ -1,17 +1,13 @@
 # Stage 1: Build
-FROM eclipse-temurin:17-jdk AS build
+FROM gradle:8-jdk17 AS build
 
 WORKDIR /app
 
-COPY gradlew .
-COPY gradle gradle
-RUN chmod +x ./gradlew && ./gradlew --no-daemon wrapper
-
 COPY build.gradle settings.gradle ./
-RUN ./gradlew --no-daemon dependencies --configuration runtimeClasspath
+RUN gradle --no-daemon dependencies --configuration runtimeClasspath
 
 COPY src src
-RUN ./gradlew --no-daemon bootJar -x test
+RUN gradle --no-daemon bootJar -x test
 
 # Stage 2: Run
 FROM eclipse-temurin:17-jre
