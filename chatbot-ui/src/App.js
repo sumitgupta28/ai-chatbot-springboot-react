@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import Chatbot from './Chatbot';
+import RAGChatbot from './RAGChatbot';
+import ChatBot from './ChatBot';
 import DocumentUpload from './DocumentUpload';
 
 function App() {
@@ -14,15 +15,23 @@ function App() {
 
     return (
         <div className="text-center">
-            <nav className="flex justify-center gap-1 px-4 pt-3 bg-white border-b border-gray-200">
-                <button className={tabClass('chat')} onClick={() => setTab('chat')}>
-                    💬 Chat
-                </button>
-                <button className={tabClass('docs')} onClick={() => setTab('docs')}>
-                    📄 Documents
-                </button>
+            <nav className="flex items-center gap-1 px-4 pt-3 bg-white border-b border-gray-200">
+                <img src="/ai-chatbot-logo.png" alt="Chatbot Logo" className="h-10 mr-3" />
+                <div className="flex items-center gap-1">
+                    <button className={tabClass('chat')} onClick={() => setTab('chat')}>
+                        💬 Chat
+                    </button>
+                    <button className={tabClass('rag')} onClick={() => setTab('rag')}>
+                        🔍 RAG Chat
+                    </button>
+                    <button className={tabClass('docs')} onClick={() => setTab('docs')}>
+                        📄 Documents
+                    </button>
+                </div>
             </nav>
-            {tab === 'chat' ? <Chatbot /> : <DocumentUpload />}
+            {tab === 'chat' && <ChatBot />}
+            {tab === 'rag' && <RAGChatbot />}
+            {tab === 'docs' && <DocumentUpload />}
         </div>
     );
 }
