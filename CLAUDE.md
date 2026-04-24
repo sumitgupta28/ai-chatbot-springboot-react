@@ -60,63 +60,87 @@ The backend uses **Spring AI's `ChatModel` interface** — the active provider i
 | *(default)* | Ollama (local) | `application.yaml` | none — Ollama at `http://localhost:11434` |
 | `anthropic` | Anthropic Claude | `application-anthropic.yaml` | `ANTHROPIC_API_KEY` |
 
-`ChatController` is provider-agnostic. Embeddings always use the local ONNX model (`all-MiniLM-L6-v2` via `spring-ai-transformers`) regardless of which chat profile is active — no Ollama or external API needed for embeddings.
+Embeddings always use the local ONNX model (`all-MiniLM-L6-v2` via `spring-ai-transformers`) regardless of which chat profile is active.
 
 When adding a new provider, add its `spring-ai-starter-model-*` dependency to `build.gradle`, create an `application-<profile>.yaml` with `spring.ai.model.chat: <provider>`, and activate it via `--spring.profiles.active=<profile>`.
 
 ## API endpoints
 
-### Chat
-Both endpoints accept `?message=<text>`. Before calling the LLM they perform a PGVector similarity search and inject relevant document context as a system prompt (RAG).
+### Direct Chat (RAG-free) — `ChatController`
+- `GET /ai/chat` — streams full `ChatResponse` objects (JSON), not used by frontend
+- `GET /ai/chat/string` — streams plain text tokens; used by the **Chat** tab
 
-- `GET /ai/chat` — streams full `ChatResponse` objects (JSON)
-- `GET /ai/chat/string` — streams plain text tokens
+### RAG Chat — `RagChatController`
+- `GET /rag/ai/chat` — RAG-augmented `ChatResponse` stream, not used by frontend
+- `GET /rag/ai/chat/string` — RAG plain-text stream, not used by frontend
+- `GET /rag/ai/chat/string/client` — **active endpoint** used by the **RAG Chat** tab
 
-### Documents (RAG ingestion)
+The active RAG endpoint accepts per-request tuning parameters (all optional with defaults):
+
+| Param | Default | Description |
+|---|---|---|
+| `message` | *(required)* | User query |
+| `topK` | `5` | Max chunks retrieved from vector store |
+| `similarityThreshold` | `0.0` | Min similarity score for a chunk to be included |
+| `mode` | `soft` | `soft` = docs + general knowledge fallback; `strict` = docs only |
+| `temperature` | `0.7` | LLM creativity (low = factual, high = creative) |
+| `maxTokens` | `1000` | Caps response length |
+
+### Documents — `DocumentController`
 - `POST /documents/upload` — multipart file upload (PDF, TXT, DOCX); chunks, embeds, and stores in PGVector
 - `GET /documents` — list all indexed documents with metadata
 - `DELETE /documents/{id}` — remove a document and its vectors from PGVector
+- `GET /documents/verify` — returns vector store health: status, total chunk count, and a list of all indexed chunks with filename, size, and content preview
+- `GET /documents/verify/search?query=&topK=&similarityThreshold=` — runs a raw similarity search and returns matched chunks with filename, similarity score, and content preview; used by the **Vector Search** tab
 
-The React frontend calls `/ai/chat/string` and `/documents/*` via axios. CORS is restricted to `http://localhost:3000`.
+## Frontend tabs
 
-## RAG configuration
+| Tab | Component | Backend endpoint |
+|---|---|---|
+| 💬 Chat | `ChatBot.js` | `GET /ai/chat/string` |
+| 🗄️ Vector Search | `VectorSearch.js` | `GET /documents/verify`, `GET /documents/verify/search` |
+| 🔍 RAG Chat | `RAGChatbot.js` | `GET /rag/ai/chat/string/client` |
+| 📄 Documents | `DocumentUpload.js` | `GET /documents`, `POST /documents/upload`, `DELETE /documents/{id}` |
 
-Controlled entirely via `application.yaml` — no code changes needed to switch modes:
+## Key architecture notes
+
+- **Two chat controllers**: `ChatController` calls the LLM directly with no document context. `RagChatController` calls `RagService.buildRagContext()` first to inject relevant document chunks as a system prompt before every LLM call.
+- `RagService.buildRagContext(message, topK, similarityThreshold, mode)` performs a PGVector similarity search and builds the system prompt. The no-arg overload delegates to this using values from `RagProperties`.
+- `RagService.searchDocuments(query, topK, threshold)` is the raw search used by the Vector Search tab — returns matched chunks with similarity scores computed as `1 - distance`.
+- `EmbeddingConfig` defines `TransformersEmbeddingModel` as `@Primary`, which prevents `OllamaEmbeddingModel` from being auto-configured. The ONNX model (`all-MiniLM-L6-v2`, 384 dims) is downloaded from HuggingFace on first use (~90 MB); subsequent starts use the cached copy.
+- `IngestionService` uses `TikaDocumentReader` (Apache Tika — handles PDF, DOCX, TXT) → `TokenTextSplitter` → `VectorStore`. Document metadata is also persisted to the `document_metadata` table in PostgreSQL.
+- Deletion removes rows from both `vector_store` (filtered by `metadata->>'filename'`) and `document_metadata`.
+- `WebConfig` is the only CORS configuration; update `allowedOrigins` if the frontend URL changes (currently restricted to `http://localhost:3000`).
+- The React app makes a **single non-streaming GET request** via axios. Switching to true SSE streaming would require `EventSource` or `fetch` with a `ReadableStream` in the chat components.
+- All Java classes use Lombok `@Slf4j` for logging.
+
+## RAG configuration defaults
+
+Fallback values when no per-request params are supplied, defined in `RagProperties` and `application.yaml`:
 
 ```yaml
 app:
   rag:
-    mode: soft          # 'soft' = use docs when relevant, fall back to general knowledge
-                        # 'strict' = answer only from docs; canned reply if no context found
-    top-k: 5            # number of document chunks retrieved per query
-    similarity-threshold: 0.7
+    mode: soft
+    top-k: 5
+    similarity-threshold: 0.0
 ```
-
-## Key architecture notes
-
-- `ChatController` calls `RagService.buildRagContext()` before every LLM call. It injects a `SystemMessage` with retrieved chunks when context is found; falls back to plain `UserMessage` when the vector store has no relevant hits (soft mode) or short-circuits with a canned reply (strict mode).
-- `EmbeddingConfig` defines `TransformersEmbeddingModel` as `@Primary`, which prevents `OllamaEmbeddingModel` from being auto-configured. The ONNX model (`all-MiniLM-L6-v2`, 384 dims) is downloaded from HuggingFace on first use (~90 MB); subsequent starts use the cached copy.
-- `IngestionService` uses `TikaDocumentReader` (Apache Tika — handles PDF, DOCX, TXT) → `TokenTextSplitter` → `VectorStore`. Document metadata is also persisted to the `document_metadata` table in PostgreSQL.
-- Deletion removes rows from both `vector_store` (filtered by `metadata->>'filename'`) and `document_metadata`.
-- `WebConfig` is the only CORS configuration; update `allowedOrigins` if the frontend URL changes.
-- The React app makes a **single non-streaming GET request** via axios (it waits for the full response). Switching to true SSE streaming would require changing `Chatbot.js` to use `EventSource` or `fetch` with a `ReadableStream`.
-- Docker Compose passes `SPRING_AI_OLLAMA_BASE_URL` to override the Ollama URL inside containers (`host.docker.internal:11434` by default). PGVector datasource URL is also overridden via `SPRING_DATASOURCE_URL=jdbc:postgresql://pgvector:5432/ragdb`.
-- All Java classes use Lombok `@Slf4j` for logging.
 
 ## Package structure
 
 ```
 in.ai.chatbot.config
 ├── config/
-│   ├── WebConfig.java          # CORS
-│   ├── EmbeddingConfig.java    # TransformersEmbeddingModel bean (@Primary)
-│   └── RagProperties.java      # @ConfigurationProperties for app.rag.*
+│   ├── WebConfig.java              # CORS
+│   ├── EmbeddingConfig.java        # TransformersEmbeddingModel bean (@Primary)
+│   └── RagProperties.java          # @ConfigurationProperties for app.rag.*
 ├── controller/
-│   ├── ChatController.java     # /ai/chat and /ai/chat/string
-│   └── DocumentController.java # /documents/*
+│   ├── ChatController.java         # /ai/chat and /ai/chat/string (RAG-free)
+│   ├── RagChatController.java      # /rag/ai/chat/* (RAG-augmented, active: /string/client)
+│   └── DocumentController.java     # /documents/* including /verify and /verify/search
 ├── model/
-│   └── DocumentInfo.java       # record returned by document endpoints
+│   └── DocumentInfo.java           # record returned by document list endpoint
 └── service/
-    ├── RagService.java         # similarity search + prompt augmentation
-    └── IngestionService.java   # document parsing, chunking, vector storage
+    ├── RagService.java             # similarity search, prompt augmentation, vector store queries
+    └── IngestionService.java       # document parsing, chunking, vector storage
 ```
