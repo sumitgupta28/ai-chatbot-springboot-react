@@ -133,6 +133,31 @@ public class RagService {
         }
     }
 
+    public List<SearchResult> searchDocuments(String query, int topK, double similarityThreshold) {
+        try {
+            List<Document> docs = vectorStore.similaritySearch(
+                    SearchRequest.builder()
+                            .query(query)
+                            .topK(topK)
+                            .similarityThreshold(similarityThreshold)
+                            .build()
+            );
+            return docs.stream()
+                    .map(doc -> {
+                        String filename = doc.getMetadata().getOrDefault("filename", "unknown").toString();
+                        Object raw = doc.getMetadata().get("distance");
+                        double similarity = raw != null ? Math.round((1.0 - Double.parseDouble(raw.toString())) * 1000.0) / 1000.0 : 0.0;
+                        String text = doc.getText() != null ? doc.getText() : "";
+                        String preview = text.substring(0, Math.min(200, text.length()));
+                        return new SearchResult(filename, similarity, preview);
+                    })
+                    .toList();
+        } catch (Exception e) {
+            log.error("Document search failed: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
     public record RagContext(String systemPrompt, boolean shortCircuit, String shortCircuitMessage) {
         static RagContext withPrompt(String systemPrompt) {
             return new RagContext(systemPrompt, false, null);
@@ -146,4 +171,6 @@ public class RagService {
     }
 
     public record VectorStoreInfo(String filename, int contentLength, String contentPreview) {}
+
+    public record SearchResult(String filename, double similarity, String contentPreview) {}
 }

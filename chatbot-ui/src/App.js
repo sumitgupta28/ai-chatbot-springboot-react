@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import RAGChatbot from './RAGChatbot';
 import ChatBot from './ChatBot';
+import VectorSearch from './VectorSearch';
 import DocumentUpload from './DocumentUpload';
 
 function App() {
@@ -21,6 +22,9 @@ function App() {
                     <button className={tabClass('chat')} onClick={() => setTab('chat')}>
                         💬 Chat
                     </button>
+                    <button className={tabClass('vector')} onClick={() => setTab('vector')}>
+                        🗄️ Vector Search
+                    </button>
                     <button className={tabClass('rag')} onClick={() => setTab('rag')}>
                         🔍 RAG Chat
                     </button>
@@ -31,6 +35,7 @@ function App() {
             </nav>
             <div className="flex-1 overflow-hidden">
                 {tab === 'chat' && <ChatBot />}
+                {tab === 'vector' && <VectorSearch />}
                 {tab === 'rag' && <RAGChatbot />}
                 {tab === 'docs' && <DocumentUpload />}
             </div>

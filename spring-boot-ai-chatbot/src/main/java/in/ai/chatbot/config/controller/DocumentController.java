@@ -60,12 +60,16 @@ public class DocumentController {
     }
 
     @GetMapping("/verify/search")
-    public Map<String, Object> verifySearch(@RequestParam(value = "query") String query) {
-        log.debug("Verifying search query: {}", query);
-        int hitCount = ragService.verifyVectorStoreContent(query);
+    public Map<String, Object> verifySearch(
+            @RequestParam(value = "query") String query,
+            @RequestParam(value = "topK", defaultValue = "10") int topK,
+            @RequestParam(value = "similarityThreshold", defaultValue = "0.0") double similarityThreshold) {
+        log.debug("Search query: '{}', topK: {}, threshold: {}", query, topK, similarityThreshold);
+        List<RagService.SearchResult> results = ragService.searchDocuments(query, topK, similarityThreshold);
         return Map.of(
                 "query", query,
-                "hitsFound", hitCount
+                "hitsFound", results.size(),
+                "results", results
         );
     }
 }
