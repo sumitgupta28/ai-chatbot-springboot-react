@@ -26,7 +26,7 @@ const Chatbot = () => {
 
         try {
             const response = await axios.get(
-                `${API_BASE}/ai/chat/string?message=${encodeURIComponent(text)}`
+                `${API_BASE}/ai/chat/string/client?message=${encodeURIComponent(text)}`
             );
             setMessages(prev => [...prev, { id: crypto.randomUUID(), text: response.data, sender: 'ai' }]);
         } catch (error) {

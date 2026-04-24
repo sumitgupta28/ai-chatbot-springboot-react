@@ -3,6 +3,7 @@ package in.ai.chatbot.config.controller;
 import in.ai.chatbot.config.service.RagService;
 import in.ai.chatbot.config.service.RagService.RagContext;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
@@ -22,17 +23,19 @@ public class ChatController {
 
     private final ChatModel chatModel;
     private final RagService ragService;
+    private final ChatClient chatClient;
 
     @Autowired
-    public ChatController(ChatModel chatModel, RagService ragService) {
+    public ChatController(ChatModel chatModel, RagService ragService, ChatClient chatClient) {
         this.chatModel = chatModel;
         this.ragService = ragService;
+        this.chatClient = chatClient;
         log.debug("ChatController initialized with model: {}", chatModel.getClass().getSimpleName());
     }
 
     @GetMapping("/ai/chat")
     public Flux<ChatResponse> generateStream(
-            @RequestParam(value = "message", defaultValue = "Tell me a joke") String message) {
+            @RequestParam(value = "message") String message) {
         log.debug("[/ai/chat] message: '{}'", message);
         RagContext ctx = ragService.buildRagContext(message);
         if (ctx.shortCircuit()) {
@@ -45,13 +48,14 @@ public class ChatController {
 
     @GetMapping("/ai/chat/string")
     public Flux<String> generateString(
-            @RequestParam(value = "message", defaultValue = "Tell me a joke") String message) {
+            @RequestParam(value = "message") String message) {
         log.debug("[/ai/chat/string] message: '{}'", message);
         RagContext ctx = ragService.buildRagContext(message);
         if (ctx.shortCircuit()) {
             return Flux.just(ctx.shortCircuitMessage());
         }
         return chatModel.stream(buildPrompt(message, ctx.systemPrompt()))
+
                 .map(cr -> {
                     String text = cr.getResult().getOutput().getText();
                     return text != null ? text : "";
@@ -59,6 +63,26 @@ public class ChatController {
                 .filter(text -> !text.isEmpty())
                 .doOnComplete(() -> log.debug("[/ai/chat/string] stream completed"))
                 .doOnError(e -> log.debug("[/ai/chat/string] stream error: {}", e.getMessage()));
+    }
+
+    @GetMapping("/ai/chat/string/client")
+    public Flux<String> generateStringWithClient(
+            @RequestParam(value = "message") String message) {
+        log.debug("[/ai/chat/string/client] message: '{}'", message);
+        RagContext ctx = ragService.buildRagContext(message);
+        if (ctx.shortCircuit()) {
+            return Flux.just(ctx.shortCircuitMessage());
+        }
+        var promptSpec = chatClient.prompt();
+        if (ctx.systemPrompt() != null && !ctx.systemPrompt().isBlank()) {
+            promptSpec = promptSpec.system(ctx.systemPrompt());
+        }
+        return promptSpec
+                .user(message)
+                .stream()
+                .content()
+                .doOnComplete(() -> log.debug("[/ai/chat/string/client] stream completed"))
+                .doOnError(e -> log.debug("[/ai/chat/string/client] stream error: {}", e.getMessage()));
     }
 
     private Prompt buildPrompt(String userMessage, String systemPrompt) {

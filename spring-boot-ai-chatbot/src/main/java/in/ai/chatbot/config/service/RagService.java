@@ -20,7 +20,11 @@ public class RagService {
             Relevant context from uploaded documents:
             {context}
 
-            Use the context above when it is relevant. Otherwise answer from your general knowledge.
+            Instructions:
+            1. If the context contains relevant information, prioritize using it and cite the source when helpful.
+            2. If the context doesn't fully cover the query, supplement with your general knowledge and clarify which parts come from documents vs. general knowledge.
+            3. Never contradict information in the provided documents.
+            4. If uncertain, acknowledge the limitation rather than guessing.
             """;
 
     private static final String STRICT_PROMPT = """
@@ -29,8 +33,11 @@ public class RagService {
             Relevant context from uploaded documents:
             {context}
 
-            Answer ONLY based on the context above. If it does not contain enough information, reply: \
-            "I don't have information about this in the uploaded documents."
+            Instructions:
+            1. Answer ONLY based on the context provided above.
+            2. If the context contains enough information to answer the question, provide a clear answer with relevant quotes if appropriate.
+            3. If the context does not contain sufficient information, reply: "I don't have information about this in the uploaded documents."
+            4. Do not use general knowledge or make assumptions beyond what is explicitly in the documents.
             """;
 
     private final VectorStore vectorStore;
@@ -42,6 +49,7 @@ public class RagService {
     }
 
     public RagContext buildRagContext(String userMessage) {
+
         List<Document> hits = vectorStore.similaritySearch(
                 SearchRequest.builder()
                         .query(userMessage)
@@ -64,7 +72,61 @@ public class RagService {
                 .collect(Collectors.joining("\n\n---\n\n"));
 
         String prompt = (strict ? STRICT_PROMPT : SOFT_PROMPT).replace("{context}", context);
+        log.debug("RAG [{}] {}", props.getMode(), prompt);
         return RagContext.withPrompt(prompt);
+    }
+
+    /**
+     * Verify VectorStore content by running a test similarity search.
+     * Returns the count of documents found for a given query.
+     */
+    public int verifyVectorStoreContent(String testQuery) {
+        try {
+
+            log.debug("Verifying vector store content: {}", testQuery);
+            List<Document> hits = vectorStore.similaritySearch(
+                    SearchRequest.builder()
+                            .query(testQuery)
+                            .topK(10)
+                            .similarityThreshold(0.0)  // Use 0.0 for verification to see all potential matches
+                            .build()
+            );
+            log.info("VectorStore verification query '{}' returned {} documents", testQuery, hits.size());
+              return hits.size();
+        } catch (Exception e) {
+            log.error("VectorStore verification failed: {}", e.getMessage());
+            return -1;
+        }
+    }
+
+    /**
+     * List all documents in VectorStore by querying with a generic search.
+     * Returns document metadata including filenames and content preview.
+     */
+    public List<VectorStoreInfo> listVectorStoreDocuments() {
+        try {
+            List<Document> docs = vectorStore.similaritySearch(
+                    SearchRequest.builder()
+                            .query("*") // Wildcard to get entries
+                            .topK(1000)
+                            .similarityThreshold(0.0)
+                            .build()
+            );
+            return docs.stream()
+                    .map(doc -> {
+                        String text = doc.getText() != null ? doc.getText() : "";
+                        return new VectorStoreInfo(
+                                doc.getMetadata().getOrDefault("filename", "unknown").toString(),
+                                text.length(),
+                                text.substring(0, Math.min(100, text.length()))
+                        );
+                    })
+                    .distinct()
+                    .toList();
+        } catch (Exception e) {
+            log.error("Failed to list VectorStore documents: {}", e.getMessage());
+            return List.of();
+        }
     }
 
     public record RagContext(String systemPrompt, boolean shortCircuit, String shortCircuitMessage) {
@@ -78,4 +140,6 @@ public class RagService {
             return new RagContext(null, true, message);
         }
     }
+
+    public record VectorStoreInfo(String filename, int contentLength, String contentPreview) {}
 }

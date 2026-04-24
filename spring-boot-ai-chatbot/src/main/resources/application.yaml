@@ -37,13 +37,13 @@ spring:
         initialize-schema: false
         index-type: HNSW
         distance-type: COSINE_DISTANCE
-        dimensions: 768
+        dimensions: 384  # Fixed: all-MiniLM-L6-v2 produces 384 dimensions, not 768
 
 app:
   rag:
-    mode: soft                 # 'soft' = fallback to general knowledge | 'strict' = docs only
+    mode: soft                  # Changed: 'soft' allows fallback to general knowledge
     top-k: 5
-    similarity-threshold: 0.7
+    similarity-threshold: 0.0   # Lowered: 0.3 is more permissive for semantic search
 
 logging:
   level:
