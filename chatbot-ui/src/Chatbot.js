@@ -4,7 +4,7 @@ import { IoMdSend } from 'react-icons/io';
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080';
 
-const Chatbot = () => {
+const ChatBot = () => {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
@@ -26,7 +26,7 @@ const Chatbot = () => {
 
         try {
             const response = await axios.get(
-                `${API_BASE}/ai/chat/string/client?message=${encodeURIComponent(text)}`
+                `${API_BASE}/ai/chat/string?message=${encodeURIComponent(text)}`
             );
             setMessages(prev => [...prev, { id: crypto.randomUUID(), text: response.data, sender: 'ai' }]);
         } catch (error) {
@@ -42,13 +42,19 @@ const Chatbot = () => {
     };
 
     return (
-        <div className="flex flex-col justify-center items-center h-screen bg-gray-100 p-5 box-border">
-            <div className="w-full max-w-xl flex justify-between items-center mb-5">
-                <img src="/ai-chatbot-logo.png" alt="Chatbot Logo" className="h-24 mr-2.5" />
+        <div className="flex flex-col justify-center items-center h-full bg-gray-100 p-5 box-border">
+
+            {/* Summary banner */}
+            <div className="w-full max-w-xl mb-3 px-4 py-3 bg-white rounded-xl shadow-sm border-l-4 border-indigo-400">
+                <p className="text-sm font-semibold text-indigo-600 mb-0.5">Direct AI Chat</p>
+                <p className="text-xs text-gray-500 leading-relaxed">
+                    Talks directly to the AI model with no document context — answers come entirely from the model's built-in knowledge.
+                    Best for general questions, brainstorming, and open-ended conversation.
+                </p>
             </div>
 
             <div
-                className="bg-white w-full max-w-xl h-[70vh] rounded-xl overflow-y-auto shadow-md p-5 flex flex-col gap-2.5"
+                className="bg-white w-full max-w-xl h-[55vh] rounded-xl overflow-y-auto shadow-md p-5 flex flex-col gap-2.5"
                 ref={chatboxRef}
                 role="log"
                 aria-live="polite"
@@ -106,4 +112,4 @@ const Chatbot = () => {
     );
 };
 
-export default Chatbot;
+export default ChatBot;

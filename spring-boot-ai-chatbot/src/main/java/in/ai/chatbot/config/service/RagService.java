@@ -49,17 +49,21 @@ public class RagService {
     }
 
     public RagContext buildRagContext(String userMessage) {
+        return buildRagContext(userMessage, props.getTopK(), props.getSimilarityThreshold(), props.getMode());
+    }
+
+    public RagContext buildRagContext(String userMessage, int topK, double similarityThreshold, String mode) {
 
         List<Document> hits = vectorStore.similaritySearch(
                 SearchRequest.builder()
                         .query(userMessage)
-                        .topK(props.getTopK())
-                        .similarityThreshold(props.getSimilarityThreshold())
+                        .topK(topK)
+                        .similarityThreshold(similarityThreshold)
                         .build()
         );
-        log.debug("RAG [{}] {} chunk(s) found for: '{}'", props.getMode(), hits.size(), userMessage);
+        log.debug("RAG [{}] {} chunk(s) found for: '{}'", mode, hits.size(), userMessage);
 
-        boolean strict = "strict".equalsIgnoreCase(props.getMode());
+        boolean strict = "strict".equalsIgnoreCase(mode);
 
         if (hits.isEmpty()) {
             return strict
@@ -72,7 +76,7 @@ public class RagService {
                 .collect(Collectors.joining("\n\n---\n\n"));
 
         String prompt = (strict ? STRICT_PROMPT : SOFT_PROMPT).replace("{context}", context);
-        log.debug("RAG [{}] {}", props.getMode(), prompt);
+        log.debug("RAG [{}] {}", mode, prompt);
         return RagContext.withPrompt(prompt);
     }
 

@@ -76,7 +76,7 @@ const DocumentUpload = () => {
     }`;
 
     return (
-        <div className="max-w-3xl mx-auto px-4 py-7 text-left">
+        <div className="max-w-3xl mx-auto px-4 py-7 text-left h-full overflow-y-auto">
             <div>
                 <h2 className="text-base font-semibold text-gray-700 mb-3">Upload Document</h2>
                 <div
