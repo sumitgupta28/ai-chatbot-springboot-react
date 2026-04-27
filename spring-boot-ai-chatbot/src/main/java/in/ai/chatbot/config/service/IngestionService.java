@@ -1,5 +1,6 @@
 package in.ai.chatbot.config.service;
 
+import in.ai.chatbot.config.config.ChunkingProperties;
 import in.ai.chatbot.config.model.DocumentInfo;
 import in.ai.chatbot.config.model.DocumentMetadata;
 import in.ai.chatbot.config.repository.DocumentMetadataRepository;
@@ -17,6 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -24,33 +26,38 @@ public class IngestionService {
 
     private final VectorStore vectorStore;
     private final DocumentMetadataRepository repository;
-    // Optimized TokenTextSplitter for RAG with better chunk size (512 tokens)
-    // Default is 800, but 512 is better for semantic search quality
-    private final TokenTextSplitter splitter;
+    private final ChunkingProperties chunkingProperties;
 
+    private static final List<Character> PUNCTUATION_MARKS = Arrays.asList(
+            '.', ',', '!', '?', ':', ';',
+            '\'', '\"', '(', ')', '[', ']',
+            '{', '}', '-', '_', '/', '\\',
+            '*', '@', '#', '$', '%', '^',
+            '&', '~', '`', '|'
+    );
 
     @PersistenceContext
     private EntityManager entityManager;
 
-    public IngestionService(VectorStore vectorStore, DocumentMetadataRepository repository) {
+    public IngestionService(VectorStore vectorStore, DocumentMetadataRepository repository,
+                            ChunkingProperties chunkingProperties) {
         this.vectorStore = vectorStore;
         this.repository = repository;
-        // Create optimized TokenTextSplitter:
-        // - Better chunk size for semantic search (512 vs default 800)
-        // - Maintains overlap for context continuity
-        // Set the List<Character> of punctuation marks
-        // Basic punctuation
-        // Quotes and brackets
-        // Dashes and slashes
-        // Symbols
-        List<Character> punctuationMarks = Arrays.asList(
-                '.', ',', '!', '?', ':', ';', // Basic punctuation
-                '\'', '\"', '(', ')', '[', ']', // Quotes and brackets
-                '{', '}', '-', '_', '/', '\\', // Dashes and slashes
-                '*', '@', '#', '$', '%', '^', // Symbols
-                '&', '~', '`', '|'
-        );
-        this.splitter = new TokenTextSplitter(512,100,50,2000,true, punctuationMarks);
+        this.chunkingProperties = chunkingProperties;
+    }
+
+    private TokenTextSplitter selectSplitter(String content) {
+        int len = content.length();
+        if (len < chunkingProperties.getTinyThreshold()) {
+            log.debug("📦 Tiny document ({} chars) → tiny chunking strategy (chunkSize=128, overlap=15)", len);
+            return new TokenTextSplitter(128, 30, 10, 15, true, PUNCTUATION_MARKS);
+        } else if (len < chunkingProperties.getSmallThreshold()) {
+            log.debug("📦 Small document ({} chars) → small chunking strategy (chunkSize=256, overlap=30)", len);
+            return new TokenTextSplitter(256, 60, 25, 30, true, PUNCTUATION_MARKS);
+        } else {
+            log.debug("📦 Medium/large document ({} chars) → standard chunking strategy (chunkSize=512, overlap=2000)", len);
+            return new TokenTextSplitter(512, 100, 50, 2000, true, PUNCTUATION_MARKS);
+        }
     }
 
     public DocumentInfo ingest(MultipartFile file) throws Exception {
@@ -93,6 +100,13 @@ public class IngestionService {
             }
         });
 
+        String combinedContent = docs.stream()
+                .map(Document::getText)
+                .filter(t -> t != null)
+                .collect(Collectors.joining(" "));
+
+        TokenTextSplitter splitter = selectSplitter(combinedContent);
+
         docs.forEach(d -> d.getMetadata().put("filename", filename));
 
         // Issue Fix #2: Validate chunks are not empty
@@ -103,7 +117,7 @@ public class IngestionService {
             throw new IllegalStateException("Document chunking failed - no chunks produced for: " + filename);
         }
 
-        log.debug("✓ TokenTextSplitter created {} chunk(s) from '{}' (using 512-token optimized settings)", chunks.size(), filename);
+        log.debug("✓ TokenTextSplitter created {} chunk(s) from '{}'", chunks.size(), filename);
 
         // Validate chunks have content
         long emptyChunks = chunks.stream().filter(c -> c.getText() == null || c.getText().isBlank()).count();
