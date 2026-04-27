@@ -209,12 +209,7 @@ const RAGChatbotWithMemory = () => {
         }
     };
 
-    const startNewConversation = async () => {
-        try {
-            await axios.delete(`${API_BASE}/rag/memory/ai/chat/conversation/${encodeURIComponent(conversationId)}`);
-        } catch (e) {
-            // best-effort; proceed regardless
-        }
+    const startNewConversation = () => {
         setConversationId(crypto.randomUUID());
         setMessages([]);
         fetchSessions();
