@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import RAGChatbot from './RAGChatbot';
+import RAGChatbotWithMemory from './RAGChatbotWithMemory';
 import ChatBot from './ChatBot';
 import VectorSearch from './VectorSearch';
 import DocumentUpload from './DocumentUpload';
@@ -28,6 +29,9 @@ function App() {
                     <button className={tabClass('rag')} onClick={() => setTab('rag')}>
                         🔍 RAG Chat
                     </button>
+                    <button className={tabClass('rag-memory')} onClick={() => setTab('rag-memory')}>
+                        🧠 RAG + Memory
+                    </button>
                     <button className={tabClass('docs')} onClick={() => setTab('docs')}>
                         📄 Documents
                     </button>
@@ -37,6 +41,7 @@ function App() {
                 {tab === 'chat' && <ChatBot />}
                 {tab === 'vector' && <VectorSearch />}
                 {tab === 'rag' && <RAGChatbot />}
+                {tab === 'rag-memory' && <RAGChatbotWithMemory />}
                 {tab === 'docs' && <DocumentUpload />}
             </div>
         </div>
