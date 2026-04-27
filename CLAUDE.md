@@ -4,78 +4,113 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository layout
 
-Two independently deployable services:
+Three independently deployable services:
 
 ```
-spring-boot-ai-chatbot/   # Spring Boot 3.5 + Spring AI 1.1.4 backend
-chatbot-ui/               # React 18 frontend (Create React App)
-docker-compose.yaml       # Orchestrates all services (backend, frontend, PGVector)
+chatbot-backend/    # Python 3.11 · FastAPI · LangChain backend
+chatbot-ui/         # React 18 frontend (Create React App)
+docker-compose.yaml # Orchestrates all services (backend, frontend, PGVector)
+Makefile            # Build and deploy shortcuts
 ```
 
-## Backend — Spring Boot
+## Backend — Python / FastAPI
 
-All commands run from `spring-boot-ai-chatbot/`.
+All commands run from `chatbot-backend/`.
 
 ```bash
-./gradlew bootRun                                             # default profile (Ollama)
-ANTHROPIC_API_KEY=sk-... ./gradlew bootRun --args='--spring.profiles.active=anthropic'
-./gradlew test                                               # run all tests
-./gradlew test --tests "in.ai.chatbot.config.SomeTest"       # run a single test class
-./gradlew bootJar                                            # build the fat JAR
+# Install dependencies
+pip install -r requirements.txt
+
+# Start PGVector first (see Docker Compose section below)
+# Then run Alembic migrations
+alembic upgrade head
+
+# Start the dev server with hot-reload
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
+
+# Or use the Makefile shortcut (also starts PGVector)
+make db        # from repo root — starts PGVector only
+make migrate   # from repo root — runs Alembic migrations
+make backend-dev  # from repo root — starts FastAPI with hot-reload
 ```
 
-Listens on **port 8080**. Requires PostgreSQL (PGVector) on **port 5432** — start it via Docker Compose before running locally.
+Listens on **port 8080**. Requires PostgreSQL (PGVector) on **port 5432** — start it via `make db` before running locally.
+
+### Environment variables
+
+Copy `.env.example` → `.env` inside `chatbot-backend/`. Key variables:
+
+```dotenv
+LLM_PROVIDER=ollama                   # "ollama" (default) or "anthropic"
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_CHAT_MODEL=llama3.2
+ANTHROPIC_API_KEY=sk-ant-...          # required only when LLM_PROVIDER=anthropic
+ANTHROPIC_CHAT_MODEL=claude-sonnet-4-6
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/ragdb
+DATABASE_SYNC_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/ragdb
+EMBEDDING_MODEL_NAME=all-MiniLM-L6-v2
+```
+
+Two database URLs are required:
+- `DATABASE_URL` (asyncpg) — used by SQLAlchemy async ORM for `document_metadata` CRUD
+- `DATABASE_SYNC_URL` (psycopg2) — used by LangChain PGVector and Alembic (both sync)
 
 ## Frontend — React
 
 All commands run from `chatbot-ui/`.
 
 ```bash
-npm start    # dev server on port 3000
-npm test     # Jest/React Testing Library
-npm run build
+npm start        # dev server on port 3000
+npm test         # Jest / React Testing Library
+npm run build    # production build
 ```
+
+Or from repo root: `make frontend-dev`
 
 ## Docker Compose (full stack)
 
 ```bash
-# Ollama default (Ollama must be running on the host at port 11434)
-docker compose up --build
+# Ollama (default) — Ollama must be running on the host at port 11434
+make up
 
-# Anthropic profile
-SPRING_PROFILES_ACTIVE=anthropic ANTHROPIC_API_KEY=sk-ant-... docker compose up --build
+# Anthropic Claude
+ANTHROPIC_API_KEY=sk-ant-... make up-anthropic
 
 # Start only PGVector (for local backend dev)
-docker compose up pgvector -d
+make db
+
+# Rebuild everything from scratch
+make rebuild
+
+# Stop all services
+make down
+
+# Tail logs
+make logs
 ```
 
-Copy `.env.example` → `.env` for environment variables.
+All `make` targets are self-documented — run `make help` for the full list.
 
 ## AI model profiles
 
-The backend uses **Spring AI's `ChatModel` interface** — the active provider is selected via `spring.ai.model.chat` in config.
+The active LLM provider is selected at startup via the `LLM_PROVIDER` environment variable.
 
-| Profile | Provider | Config file | Required env var |
-|---|---|---|---|
-| *(default)* | Ollama (local) | `application.yaml` | none — Ollama at `http://localhost:11434` |
-| `anthropic` | Anthropic Claude | `application-anthropic.yaml` | `ANTHROPIC_API_KEY` |
+| `LLM_PROVIDER` | Provider | Required env var |
+|---|---|---|
+| `ollama` *(default)* | Ollama (local) | none — Ollama at `http://localhost:11434` |
+| `anthropic` | Anthropic Claude | `ANTHROPIC_API_KEY` |
 
-Embeddings always use the local ONNX model (`all-MiniLM-L6-v2` via `spring-ai-transformers`) regardless of which chat profile is active.
-
-When adding a new provider, add its `spring-ai-starter-model-*` dependency to `build.gradle`, create an `application-<profile>.yaml` with `spring.ai.model.chat: <provider>`, and activate it via `--spring.profiles.active=<profile>`.
+Embeddings always use the local `all-MiniLM-L6-v2` model via `sentence-transformers` (384 dims, downloaded from HuggingFace on first use ~90 MB, cached afterwards). This is independent of the chat LLM provider.
 
 ## API endpoints
 
-### Direct Chat (RAG-free) — `ChatController`
-- `GET /ai/chat` — streams full `ChatResponse` objects (JSON), not used by frontend
-- `GET /ai/chat/string` — streams plain text tokens; used by the **Chat** tab
+### Direct Chat (RAG-free) — `routers/chat.py`
+- `GET /ai/chat/string` — SSE stream of text tokens; used by the **Chat** tab
 
-### RAG Chat — `RagChatController`
-- `GET /rag/ai/chat` — RAG-augmented `ChatResponse` stream, not used by frontend
-- `GET /rag/ai/chat/string` — RAG plain-text stream, not used by frontend
-- `GET /rag/ai/chat/string/client` — **active endpoint** used by the **RAG Chat** tab
+### RAG Chat — `routers/rag_chat.py`
+- `GET /rag/ai/chat/string/client` — RAG-augmented SSE stream; used by the **RAG Chat** tab
 
-The active RAG endpoint accepts per-request tuning parameters (all optional with defaults):
+The RAG endpoint accepts per-request tuning parameters (all optional with defaults):
 
 | Param | Default | Description |
 |---|---|---|
@@ -86,61 +121,107 @@ The active RAG endpoint accepts per-request tuning parameters (all optional with
 | `temperature` | `0.7` | LLM creativity (low = factual, high = creative) |
 | `maxTokens` | `1000` | Caps response length |
 
-### Documents — `DocumentController`
-- `POST /documents/upload` — multipart file upload (PDF, TXT, DOCX); chunks, embeds, and stores in PGVector
+### Documents — `routers/documents.py`
+- `POST /documents/upload` — multipart file upload (PDF, TXT, DOCX); chunks, embeds, stores in PGVector
 - `GET /documents` — list all indexed documents with metadata
 - `DELETE /documents/{id}` — remove a document and its vectors from PGVector
-- `GET /documents/verify` — returns vector store health: status, total chunk count, and a list of all indexed chunks with filename, size, and content preview
-- `GET /documents/verify/search?query=&topK=&similarityThreshold=` — runs a raw similarity search and returns matched chunks with filename, similarity score, and content preview; used by the **Vector Search** tab
+- `GET /documents/verify` — vector store health: status, total chunk count, list of all indexed chunks
+- `GET /documents/verify/search?query=&topK=&similarityThreshold=` — raw similarity search with scores; used by the **Vector Search** tab
+
+### SSE streaming format
+
+Both chat endpoints return `text/event-stream`. Each event:
+```
+data: <token>\n\n
+```
+End-of-stream marker:
+```
+data: [DONE]\n\n
+```
 
 ## Frontend tabs
 
 | Tab | Component | Backend endpoint |
 |---|---|---|
-| 💬 Chat | `ChatBot.js` | `GET /ai/chat/string` |
+| 💬 Chat | `ChatBot.js` | `GET /ai/chat/string` (SSE) |
 | 🗄️ Vector Search | `VectorSearch.js` | `GET /documents/verify`, `GET /documents/verify/search` |
-| 🔍 RAG Chat | `RAGChatbot.js` | `GET /rag/ai/chat/string/client` |
+| 🔍 RAG Chat | `RAGChatbot.js` | `GET /rag/ai/chat/string/client` (SSE) |
 | 📄 Documents | `DocumentUpload.js` | `GET /documents`, `POST /documents/upload`, `DELETE /documents/{id}` |
+
+`ChatBot.js` and `RAGChatbot.js` use the browser's native `EventSource` API for SSE.
+`DocumentUpload.js` and `VectorSearch.js` use axios (non-streaming).
 
 ## Key architecture notes
 
-- **Two chat controllers**: `ChatController` calls the LLM directly with no document context. `RagChatController` calls `RagService.buildRagContext()` first to inject relevant document chunks as a system prompt before every LLM call.
-- `RagService.buildRagContext(message, topK, similarityThreshold, mode)` performs a PGVector similarity search and builds the system prompt. The no-arg overload delegates to this using values from `RagProperties`.
-- `RagService.searchDocuments(query, topK, threshold)` is the raw search used by the Vector Search tab — returns matched chunks with similarity scores computed as `1 - distance`.
-- `EmbeddingConfig` defines `TransformersEmbeddingModel` as `@Primary`, which prevents `OllamaEmbeddingModel` from being auto-configured. The ONNX model (`all-MiniLM-L6-v2`, 384 dims) is downloaded from HuggingFace on first use (~90 MB); subsequent starts use the cached copy.
-- `IngestionService` uses `TikaDocumentReader` (Apache Tika — handles PDF, DOCX, TXT) → `TokenTextSplitter` → `VectorStore`. Document metadata is also persisted to the `document_metadata` table in PostgreSQL.
-- Deletion removes rows from both `vector_store` (filtered by `metadata->>'filename'`) and `document_metadata`.
-- `WebConfig` is the only CORS configuration; update `allowedOrigins` if the frontend URL changes (currently restricted to `http://localhost:3000`).
-- The React app makes a **single non-streaming GET request** via axios. Switching to true SSE streaming would require `EventSource` or `fetch` with a `ReadableStream` in the chat components.
-- All Java classes use Lombok `@Slf4j` for logging.
+- **Two URL databases**: `DATABASE_URL` uses `asyncpg` for async SQLAlchemy ORM. `DATABASE_SYNC_URL` uses `psycopg2` for LangChain PGVector (which is synchronous). Never swap them. All PGVector calls are offloaded to a thread pool via `anyio.to_thread.run_sync()` to avoid blocking the async event loop.
+- **Singletons in `dependencies.py`**: `HuggingFaceEmbeddings`, `PGVector`, and the base LLM are initialized once during FastAPI `lifespan` startup and injected via `Depends()`. Per-request temperature/maxTokens create a fresh LLM instance via `create_llm()` — inexpensive since these are thin HTTP clients.
+- **RAG modes**: `soft` — uses document context if found, falls back to general knowledge if no chunks match. `strict` — returns a short-circuit message without calling the LLM if no chunks match.
+- **Similarity score**: `similarity_search_with_score()` returns cosine *distance* (0 = identical). Convert to similarity: `similarity = 1.0 - distance`. Always apply this conversion before filtering against `similarityThreshold` or returning to the client.
+- **Document deletion**: Vectors are deleted from `langchain_pg_embedding` via raw SQL filtered on `cmetadata->>'filename'`, then the `document_metadata` row is deleted. Both happen in a single logical unit.
+- **Chunking**: `RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=100)`. Chunks shorter than 50 characters are discarded. Each chunk carries `metadata["filename"]` for filtering and deletion.
+- **CORS**: Configured in `app/main.py` — currently allows `http://localhost:3000`. Update `allow_origins` if the frontend URL changes.
+- **Alembic**: Manages only the `document_metadata` table. LangChain PGVector (`langchain_pg_collection`, `langchain_pg_embedding`) creates its own tables at startup. Do not include LangChain tables in Alembic migrations.
 
-## RAG configuration defaults
+## Database schema
 
-Fallback values when no per-request params are supplied, defined in `RagProperties` and `application.yaml`:
+### `document_metadata` (Alembic-managed)
 
-```yaml
-app:
-  rag:
-    mode: soft
-    top-k: 5
-    similarity-threshold: 0.0
-```
+| Column | Type | Notes |
+|---|---|---|
+| `id` | BIGSERIAL PK | Auto-increment |
+| `filename` | VARCHAR(255) | Original file name |
+| `content_type` | VARCHAR(100) | MIME type |
+| `file_size` | BIGINT | Bytes |
+| `upload_time` | TIMESTAMP | `server_default=NOW()` |
+| `chunk_count` | INTEGER | Chunks created from this document |
+
+### LangChain vector store (auto-created at startup)
+
+| Table | Purpose |
+|---|---|
+| `langchain_pg_collection` | Named collection — `collection_name="chatbot_documents"` |
+| `langchain_pg_embedding` | Vectors with `cmetadata` JSONB (includes `filename`), HNSW index |
 
 ## Package structure
 
 ```
-in.ai.chatbot.config
-├── config/
-│   ├── WebConfig.java              # CORS
-│   ├── EmbeddingConfig.java        # TransformersEmbeddingModel bean (@Primary)
-│   └── RagProperties.java          # @ConfigurationProperties for app.rag.*
-├── controller/
-│   ├── ChatController.java         # /ai/chat and /ai/chat/string (RAG-free)
-│   ├── RagChatController.java      # /rag/ai/chat/* (RAG-augmented, active: /string/client)
-│   └── DocumentController.java     # /documents/* including /verify and /verify/search
-├── model/
-│   └── DocumentInfo.java           # record returned by document list endpoint
-└── service/
-    ├── RagService.java             # similarity search, prompt augmentation, vector store queries
-    └── IngestionService.java       # document parsing, chunking, vector storage
+chatbot-backend/
+├── app/
+│   ├── main.py                  # FastAPI app, CORS middleware, lifespan, router wiring
+│   ├── config.py                # pydantic-settings — all env vars loaded here
+│   ├── dependencies.py          # singletons: embeddings, vector_store, llm, sync_engine
+│   ├── routers/
+│   │   ├── chat.py              # GET /ai/chat/string
+│   │   ├── rag_chat.py          # GET /rag/ai/chat/string/client
+│   │   └── documents.py         # /documents/* (upload, list, delete, verify, search)
+│   ├── services/
+│   │   ├── rag_service.py       # build_rag_context(), verify_vector_store(), search_documents()
+│   │   └── ingestion_service.py # ingest_document(), list_documents(), delete_document()
+│   ├── models/
+│   │   ├── db.py                # SQLAlchemy DocumentMetadata ORM model
+│   │   └── schemas.py           # Pydantic response schemas (DocumentInfo, SearchResult, etc.)
+│   ├── db/
+│   │   └── session.py           # async SQLAlchemy engine + get_db() FastAPI dependency
+│   └── parsers/
+│       ├── pdf_parser.py        # PyMuPDF — extract_text_from_pdf(bytes) -> str
+│       ├── docx_parser.py       # python-docx — extract_text_from_docx(bytes) -> str
+│       └── txt_parser.py        # built-in — extract_text_from_txt(bytes) -> str
+├── alembic/
+│   └── versions/
+│       └── 0001_init_document_metadata.py
+├── alembic.ini
+├── .env                         # local dev config (not committed)
+├── .env.example                 # template
+├── requirements.txt
+└── Dockerfile
+```
+
+## RAG configuration defaults
+
+Fallback values when no per-request params are supplied, defined in `config.py` and `.env`:
+
+```dotenv
+RAG_MODE=soft
+RAG_TOP_K=5
+RAG_SIMILARITY_THRESHOLD=0.0
 ```
