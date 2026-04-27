@@ -19,4 +19,4 @@ chatbot-ui/build/
 
 # OS
 .DS_Store
-/data-generator/output/
+/bill-data-generator/output/
