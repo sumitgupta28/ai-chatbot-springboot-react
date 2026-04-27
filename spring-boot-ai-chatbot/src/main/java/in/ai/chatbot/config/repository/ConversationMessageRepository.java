@@ -20,4 +20,20 @@ public interface ConversationMessageRepository extends JpaRepository<Conversatio
 
     @Query("SELECT DISTINCT c.conversationId FROM ConversationMessage c")
     List<String> findDistinctConversationIds();
+
+    @Query(value = """
+            SELECT cm.conversation_id,
+                   MIN(cm.created_at) AS started_at,
+                   MAX(cm.created_at) AS last_activity,
+                   COUNT(cm.id)       AS message_count,
+                   (SELECT sub.content FROM conversation_messages sub
+                    WHERE sub.conversation_id = cm.conversation_id
+                      AND sub.role = 'USER'
+                    ORDER BY sub.message_index ASC
+                    LIMIT 1)          AS preview
+            FROM conversation_messages cm
+            GROUP BY cm.conversation_id
+            ORDER BY last_activity DESC
+            """, nativeQuery = true)
+    List<Object[]> findConversationSummaries();
 }

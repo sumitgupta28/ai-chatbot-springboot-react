@@ -1,5 +1,7 @@
 package in.ai.chatbot.config.controller;
 
+import in.ai.chatbot.config.model.ConversationMessage;
+import in.ai.chatbot.config.model.ConversationSummary;
 import in.ai.chatbot.config.service.RagMemoryService;
 import in.ai.chatbot.config.service.RagService.RagContext;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +12,8 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
+
+import java.util.List;
 
 @Slf4j
 @RestController
@@ -67,5 +71,15 @@ public class RagMemoryChatController {
     public ResponseEntity<Void> clearConversation(@PathVariable String conversationId) {
         ragMemoryService.clearConversation(conversationId);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/rag/memory/conversations")
+    public List<ConversationSummary> listConversations() {
+        return ragMemoryService.listConversations();
+    }
+
+    @GetMapping("/rag/memory/conversations/{conversationId}/messages")
+    public List<ConversationMessage> getConversationMessages(@PathVariable String conversationId) {
+        return ragMemoryService.getConversationMessages(conversationId);
     }
 }

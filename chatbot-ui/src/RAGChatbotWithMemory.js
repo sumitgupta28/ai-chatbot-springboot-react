@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { IoMdSend } from 'react-icons/io';
 
@@ -97,6 +97,53 @@ const ModeToggle = ({ value, onChange }) => (
     </div>
 );
 
+const formatSessionDate = (isoStr) => {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    const now = new Date();
+    const diffMs = now - d;
+    const diffDays = Math.floor(diffMs / 86400000);
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
+const SessionItem = ({ session, isActive, onLoad, onDelete }) => {
+    const preview = session.preview
+        ? (session.preview.length > 48 ? session.preview.slice(0, 48) + '…' : session.preview)
+        : 'Empty session';
+    const shortId = session.conversationId.slice(-6);
+    const dateStr = formatSessionDate(session.lastActivity);
+
+    return (
+        <div
+            onClick={onLoad}
+            className={`relative p-2.5 rounded-lg border cursor-pointer group transition-colors ${
+                isActive
+                    ? 'bg-indigo-50 border-indigo-300'
+                    : 'bg-white border-gray-100 hover:bg-gray-50 hover:border-gray-200'
+            }`}
+        >
+            <p className="text-xs text-gray-700 leading-snug pr-4">{preview}</p>
+            <div className="flex items-center gap-1.5 mt-1">
+                <span className="text-xs font-mono text-gray-400">…{shortId}</span>
+                <span className="text-xs text-gray-300">·</span>
+                <span className="text-xs text-gray-400">{dateStr}</span>
+                <span className="text-xs text-gray-300">·</span>
+                <span className="text-xs text-gray-400">{session.messageCount} msgs</span>
+            </div>
+            <button
+                onClick={(e) => { e.stopPropagation(); onDelete(session.conversationId); }}
+                title="Delete session"
+                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-all text-base leading-none"
+            >
+                ×
+            </button>
+        </div>
+    );
+};
+
 const RAGChatbotWithMemory = () => {
     const [conversationId, setConversationId] = useState(() => crypto.randomUUID());
     const [messages, setMessages] = useState([]);
@@ -107,6 +154,8 @@ const RAGChatbotWithMemory = () => {
     const [topK, setTopK] = useState(5);
     const [temperature, setTemperature] = useState(0.7);
     const [maxTokens, setMaxTokens] = useState(1000);
+    const [sessions, setSessions] = useState([]);
+    const [loadingSessions, setLoadingSessions] = useState(false);
     const chatboxRef = useRef(null);
 
     useEffect(() => {
@@ -114,6 +163,22 @@ const RAGChatbotWithMemory = () => {
             chatboxRef.current.scrollTop = chatboxRef.current.scrollHeight;
         }
     }, [messages]);
+
+    const fetchSessions = useCallback(async () => {
+        setLoadingSessions(true);
+        try {
+            const res = await axios.get(`${API_BASE}/rag/memory/conversations`);
+            setSessions(res.data);
+        } catch (e) {
+            // silently ignore
+        } finally {
+            setLoadingSessions(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchSessions();
+    }, [fetchSessions]);
 
     const sendMessage = async () => {
         if (!input.trim()) return;
@@ -135,6 +200,7 @@ const RAGChatbotWithMemory = () => {
                 `&maxTokens=${maxTokens}`
             );
             setMessages(prev => [...prev, { id: crypto.randomUUID(), text: response.data, sender: 'ai' }]);
+            fetchSessions();
         } catch (error) {
             console.error('Error fetching AI response:', error);
             setMessages(prev => [...prev, { id: crypto.randomUUID(), text: 'Sorry, something went wrong. Please try again.', sender: 'ai' }]);
@@ -151,6 +217,38 @@ const RAGChatbotWithMemory = () => {
         }
         setConversationId(crypto.randomUUID());
         setMessages([]);
+        fetchSessions();
+    };
+
+    const loadSession = async (sessionId) => {
+        if (sessionId === conversationId) return;
+        try {
+            const res = await axios.get(`${API_BASE}/rag/memory/conversations/${encodeURIComponent(sessionId)}/messages`);
+            const loaded = res.data
+                .filter(m => m.role === 'USER' || m.role === 'ASSISTANT')
+                .map(m => ({
+                    id: crypto.randomUUID(),
+                    text: m.content,
+                    sender: m.role === 'USER' ? 'user' : 'ai'
+                }));
+            setConversationId(sessionId);
+            setMessages(loaded);
+        } catch (e) {
+            console.error('Failed to load session', e);
+        }
+    };
+
+    const deleteSession = async (sessionId) => {
+        try {
+            await axios.delete(`${API_BASE}/rag/memory/ai/chat/conversation/${encodeURIComponent(sessionId)}`);
+            setSessions(prev => prev.filter(s => s.conversationId !== sessionId));
+            if (sessionId === conversationId) {
+                setConversationId(crypto.randomUUID());
+                setMessages([]);
+            }
+        } catch (e) {
+            console.error('Failed to delete session', e);
+        }
     };
 
     const handleKeyDown = (e) => {
@@ -162,15 +260,15 @@ const RAGChatbotWithMemory = () => {
     return (
         <div className="flex h-full bg-gray-100 overflow-hidden">
 
-            {/* Left — RAG Settings panel */}
+            {/* Left — Settings + Sessions panel */}
             <div className="w-72 min-w-[18rem] bg-white border-r border-gray-200 p-6 flex flex-col shadow-sm overflow-y-auto">
                 <h2 className="text-base font-bold text-indigo-600 mb-1 tracking-wide uppercase">RAG + Memory</h2>
                 <p className="text-xs text-gray-400 mb-5">Tune retrieval & generation per query</p>
 
-                {/* Session info */}
-                <div className="mb-5 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
+                {/* Active session */}
+                <div className="mb-4 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
                     <div className="flex justify-between items-center mb-2">
-                        <span className="text-xs font-semibold text-indigo-600 uppercase tracking-widest">Session</span>
+                        <span className="text-xs font-semibold text-indigo-600 uppercase tracking-widest">Active Session</span>
                         <span className="text-xs font-mono text-gray-500 bg-white px-2 py-0.5 rounded border border-gray-200">
                             …{shortId}
                         </span>
@@ -180,59 +278,87 @@ const RAGChatbotWithMemory = () => {
                         <button
                             onClick={startNewConversation}
                             disabled={loading}
-                            className="text-xs px-2 py-1 bg-red-50 text-red-500 border border-red-200 rounded hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="text-xs px-2 py-1 bg-indigo-500 text-white rounded hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            New Chat
+                            + New Session
                         </button>
                     </div>
                 </div>
 
-                <ModeToggle value={mode} onChange={setMode} />
-
-                <div className="border-t border-gray-100 pt-5">
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Retrieval</p>
-
-                    <GradientSlider
-                        label="Similarity Threshold"
-                        value={similarityThreshold}
-                        min={0.0}
-                        max={1.0}
-                        step={0.05}
-                        onChange={setSimilarityThreshold}
-                        formatValue={(v) => v.toFixed(2)}
-                    />
-
-                    <GradientSlider
-                        label="Top K"
-                        value={topK}
-                        min={1}
-                        max={20}
-                        step={1}
-                        onChange={setTopK}
-                    />
+                {/* Past sessions */}
+                <div className="mb-5">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Past Sessions</span>
+                        {loadingSessions
+                            ? <span className="text-xs text-gray-400">Loading…</span>
+                            : <span className="text-xs text-gray-400">{sessions.length}</span>
+                        }
+                    </div>
+                    <div className="flex flex-col gap-1.5 max-h-52 overflow-y-auto">
+                        {sessions.length === 0 && !loadingSessions ? (
+                            <p className="text-xs text-gray-400 italic px-1 py-2">No saved sessions yet</p>
+                        ) : (
+                            sessions.map(s => (
+                                <SessionItem
+                                    key={s.conversationId}
+                                    session={s}
+                                    isActive={s.conversationId === conversationId}
+                                    onLoad={() => loadSession(s.conversationId)}
+                                    onDelete={deleteSession}
+                                />
+                            ))
+                        )}
+                    </div>
                 </div>
 
                 <div className="border-t border-gray-100 pt-5">
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Generation</p>
+                    <ModeToggle value={mode} onChange={setMode} />
 
-                    <GradientSlider
-                        label="Temperature"
-                        value={temperature}
-                        min={0.0}
-                        max={1.0}
-                        step={0.1}
-                        onChange={setTemperature}
-                        formatValue={(v) => v.toFixed(1)}
-                    />
+                    <div className="border-t border-gray-100 pt-5">
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Retrieval</p>
 
-                    <GradientSlider
-                        label="Max Tokens"
-                        value={maxTokens}
-                        min={100}
-                        max={2000}
-                        step={100}
-                        onChange={setMaxTokens}
-                    />
+                        <GradientSlider
+                            label="Similarity Threshold"
+                            value={similarityThreshold}
+                            min={0.0}
+                            max={1.0}
+                            step={0.05}
+                            onChange={setSimilarityThreshold}
+                            formatValue={(v) => v.toFixed(2)}
+                        />
+
+                        <GradientSlider
+                            label="Top K"
+                            value={topK}
+                            min={1}
+                            max={20}
+                            step={1}
+                            onChange={setTopK}
+                        />
+                    </div>
+
+                    <div className="border-t border-gray-100 pt-5">
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Generation</p>
+
+                        <GradientSlider
+                            label="Temperature"
+                            value={temperature}
+                            min={0.0}
+                            max={1.0}
+                            step={0.1}
+                            onChange={setTemperature}
+                            formatValue={(v) => v.toFixed(1)}
+                        />
+
+                        <GradientSlider
+                            label="Max Tokens"
+                            value={maxTokens}
+                            min={100}
+                            max={2000}
+                            step={100}
+                            onChange={setMaxTokens}
+                        />
+                    </div>
                 </div>
 
                 <div className="mt-auto pt-5 border-t border-gray-100">
@@ -253,7 +379,7 @@ const RAGChatbotWithMemory = () => {
                     <p className="text-sm font-semibold text-purple-600 mb-0.5">RAG-Powered Chat with Memory</p>
                     <p className="text-xs text-gray-500 leading-relaxed">
                         Each query searches your indexed documents <strong>and</strong> remembers your conversation history (last 20 messages).
-                        Click <strong>New Chat</strong> in the settings panel to start a fresh session. History is persisted across page reloads.
+                        Click <strong>+ New Session</strong> to start fresh, or pick a past session from the left panel to continue it.
                     </p>
                 </div>
 
@@ -264,6 +390,11 @@ const RAGChatbotWithMemory = () => {
                     role="log"
                     aria-live="polite"
                 >
+                    {messages.length === 0 && (
+                        <div className="flex items-center justify-center h-full">
+                            <p className="text-sm text-gray-400 italic">Start chatting or load a past session from the left panel</p>
+                        </div>
+                    )}
                     {messages.map((msg) => (
                         <div
                             key={msg.id}
