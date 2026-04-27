@@ -4,6 +4,7 @@ import RAGChatbotWithMemory from './RAGChatbotWithMemory';
 import ChatBot from './ChatBot';
 import VectorSearch from './VectorSearch';
 import DocumentUpload from './DocumentUpload';
+import ToolAgent from './ToolAgent';
 
 function App() {
     const [tab, setTab] = useState('chat');
@@ -35,6 +36,9 @@ function App() {
                     <button className={tabClass('docs')} onClick={() => setTab('docs')}>
                         📄 Documents
                     </button>
+                    <button className={tabClass('tools')} onClick={() => setTab('tools')}>
+                        🔧 Tool Agent
+                    </button>
                 </div>
             </nav>
             <div className="flex-1 overflow-hidden">
@@ -43,6 +47,7 @@ function App() {
                 {tab === 'rag' && <RAGChatbot />}
                 {tab === 'rag-memory' && <RAGChatbotWithMemory />}
                 {tab === 'docs' && <DocumentUpload />}
+                {tab === 'tools' && <ToolAgent />}
             </div>
         </div>
     );
