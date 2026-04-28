@@ -6,6 +6,7 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -32,7 +33,7 @@ public class ChatController {
                 .doOnError(e -> log.debug("[/ai/chat] Stream error: {}", e.getMessage()));
     }
 
-    @GetMapping("/ai/chat/string")
+    @GetMapping(value = "/ai/chat/string", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> generateString(@RequestParam(value = "message", defaultValue = "Tell me a joke") String message) {
         log.debug("[/ai/chat/string] Incoming message: '{}'", message);
         Prompt prompt = new Prompt(new UserMessage(message));

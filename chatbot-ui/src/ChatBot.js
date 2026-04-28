@@ -1,13 +1,12 @@
-import React, { useState, useRef, useEffect } from 'react';
-import axios from 'axios';
+import React, { useRef, useEffect, useState } from 'react';
 import { IoMdSend } from 'react-icons/io';
+import { useStreamingChat } from './useStreamingChat';
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080';
 
 const ChatBot = () => {
-    const [messages, setMessages] = useState([]);
+    const { messages, streaming, sendMessage } = useStreamingChat();
     const [input, setInput] = useState('');
-    const [loading, setLoading] = useState(false);
     const chatboxRef = useRef(null);
 
     useEffect(() => {
@@ -16,35 +15,20 @@ const ChatBot = () => {
         }
     }, [messages]);
 
-    const sendMessage = async () => {
-        if (!input.trim()) return;
-
+    const handleSend = () => {
+        if (!input.trim() || streaming) return;
         const text = input;
-        setMessages(prev => [...prev, { id: crypto.randomUUID(), text, sender: 'user' }]);
         setInput('');
-        setLoading(true);
-
-        try {
-            const response = await axios.get(
-                `${API_BASE}/ai/chat/string?message=${encodeURIComponent(text)}`
-            );
-            setMessages(prev => [...prev, { id: crypto.randomUUID(), text: response.data, sender: 'ai' }]);
-        } catch (error) {
-            console.error('Error fetching AI response:', error);
-            setMessages(prev => [...prev, { id: crypto.randomUUID(), text: 'Sorry, something went wrong. Please try again.', sender: 'ai' }]);
-        } finally {
-            setLoading(false);
-        }
+        sendMessage(text, `${API_BASE}/ai/chat/string?message=${encodeURIComponent(text)}`);
     };
 
     const handleKeyDown = (e) => {
-        if (e.key === 'Enter') sendMessage();
+        if (e.key === 'Enter') handleSend();
     };
 
     return (
         <div className="flex flex-col justify-center items-center h-full bg-gray-100 p-5 box-border">
 
-            {/* Summary banner */}
             <div className="w-full max-w-xl mb-3 px-4 py-3 bg-white rounded-xl shadow-sm border-l-4 border-indigo-400">
                 <p className="text-sm font-semibold text-indigo-600 mb-0.5">Direct AI Chat</p>
                 <p className="text-xs text-gray-500 leading-relaxed">
@@ -58,6 +42,7 @@ const ChatBot = () => {
                 ref={chatboxRef}
                 role="log"
                 aria-live="polite"
+                aria-atomic="false"
             >
                 {messages.map((msg) => (
                     <div
@@ -75,18 +60,15 @@ const ChatBot = () => {
                             }`}
                         >
                             {msg.text}
+                            {msg.streaming && (
+                                <span className="inline-block w-0.5 h-4 bg-gray-500 ml-0.5 align-middle animate-pulse" />
+                            )}
                         </div>
                         {msg.sender === 'user' && (
                             <img src="/user-icon.png" alt="User Avatar" className="w-10 h-10 rounded-full ml-2.5 flex-shrink-0" />
                         )}
                     </div>
                 ))}
-                {loading && (
-                    <div className="flex items-start">
-                        <img src="/ai-assistant.png" alt="AI Avatar" className="w-10 h-10 rounded-full mr-2.5 flex-shrink-0" />
-                        <div className="max-w-[80%] px-3 py-2.5 rounded-xl text-base bg-gray-200 text-black my-1.5">...</div>
-                    </div>
-                )}
             </div>
 
             <div className="flex justify-center items-center w-full max-w-xl mt-5">
@@ -96,12 +78,12 @@ const ChatBot = () => {
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="Type your message..."
-                    disabled={loading}
+                    disabled={streaming}
                     className="w-full p-2.5 border border-gray-300 rounded text-base mr-2.5 focus:outline-none focus:border-indigo-400 disabled:opacity-60 disabled:cursor-not-allowed"
                 />
                 <button
-                    onClick={sendMessage}
-                    disabled={loading}
+                    onClick={handleSend}
+                    disabled={streaming}
                     aria-label="Send message"
                     className="bg-indigo-500 text-white border-none rounded p-2.5 px-4 cursor-pointer text-base flex justify-center items-center hover:bg-indigo-600 active:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
                 >

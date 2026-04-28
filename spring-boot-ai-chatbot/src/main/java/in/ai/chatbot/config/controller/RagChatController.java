@@ -11,6 +11,7 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -59,7 +60,7 @@ public class RagChatController {
                 .doOnError(e -> log.debug("[/ai/chat/string] stream error: {}", e.getMessage()));
     }
 
-    @GetMapping("/rag/ai/chat/string/client")
+    @GetMapping(value = "/rag/ai/chat/string/client", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> generateStringWithClient(
             @RequestParam(value = "message") String message,
             @RequestParam(value = "topK", defaultValue = "5") int topK,

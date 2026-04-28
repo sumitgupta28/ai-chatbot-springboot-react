@@ -9,6 +9,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
@@ -28,7 +29,7 @@ public class RagMemoryChatController {
         this.ragMemoryService = ragMemoryService;
     }
 
-    @GetMapping("/rag/memory/ai/chat/string/client")
+    @GetMapping(value = "/rag/memory/ai/chat/string/client", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> generateWithMemory(
             @RequestParam("message") String message,
             @RequestParam("conversationId") String conversationId,

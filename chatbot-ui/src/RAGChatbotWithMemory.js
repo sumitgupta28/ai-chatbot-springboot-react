@@ -1,10 +1,11 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import { IoMdSend } from 'react-icons/io';
+import { useStreamingChat } from './useStreamingChat';
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080';
 
-const GradientSlider = ({ label, value, min, max, step, onChange, formatValue }) => {
+const GradientSlider = ({ label, value, min, max, step, onChange, formatValue, disabled }) => {
     const pct = ((value - min) / (max - min)) * 100;
 
     const trackStyle = {
@@ -43,7 +44,8 @@ const GradientSlider = ({ label, value, min, max, step, onChange, formatValue })
                     step={step}
                     value={value}
                     onChange={(e) => onChange(Number(e.target.value))}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    disabled={disabled}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
                     style={{ margin: 0 }}
                 />
                 <div
@@ -71,7 +73,7 @@ const GradientSlider = ({ label, value, min, max, step, onChange, formatValue })
     );
 };
 
-const ModeToggle = ({ value, onChange }) => (
+const ModeToggle = ({ value, onChange, disabled }) => (
     <div className="mb-6">
         <span className="text-sm font-semibold text-gray-700 block mb-2">RAG Mode</span>
         <div className="flex rounded-lg border border-gray-200 overflow-hidden">
@@ -79,7 +81,8 @@ const ModeToggle = ({ value, onChange }) => (
                 <button
                     key={m}
                     onClick={() => onChange(m)}
-                    className={`flex-1 py-1.5 text-sm font-medium transition-colors capitalize ${
+                    disabled={disabled}
+                    className={`flex-1 py-1.5 text-sm font-medium transition-colors capitalize disabled:opacity-60 disabled:cursor-not-allowed ${
                         value === m
                             ? 'bg-indigo-500 text-white'
                             : 'bg-white text-gray-500 hover:bg-gray-50'
@@ -146,9 +149,7 @@ const SessionItem = ({ session, isActive, onLoad, onDelete }) => {
 
 const RAGChatbotWithMemory = () => {
     const [conversationId, setConversationId] = useState(() => crypto.randomUUID());
-    const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
-    const [loading, setLoading] = useState(false);
     const [mode, setMode] = useState('soft');
     const [similarityThreshold, setSimilarityThreshold] = useState(0.0);
     const [topK, setTopK] = useState(5);
@@ -157,12 +158,6 @@ const RAGChatbotWithMemory = () => {
     const [sessions, setSessions] = useState([]);
     const [loadingSessions, setLoadingSessions] = useState(false);
     const chatboxRef = useRef(null);
-
-    useEffect(() => {
-        if (chatboxRef.current) {
-            chatboxRef.current.scrollTop = chatboxRef.current.scrollHeight;
-        }
-    }, [messages]);
 
     const fetchSessions = useCallback(async () => {
         setLoadingSessions(true);
@@ -176,37 +171,31 @@ const RAGChatbotWithMemory = () => {
         }
     }, []);
 
+    const { messages, setMessages, streaming, sendMessage } = useStreamingChat({ onComplete: fetchSessions });
+
+    useEffect(() => {
+        if (chatboxRef.current) {
+            chatboxRef.current.scrollTop = chatboxRef.current.scrollHeight;
+        }
+    }, [messages]);
+
     useEffect(() => {
         fetchSessions();
     }, [fetchSessions]);
 
-    const sendMessage = async () => {
-        if (!input.trim()) return;
-
+    const handleSend = () => {
+        if (!input.trim() || streaming) return;
         const text = input;
-        setMessages(prev => [...prev, { id: crypto.randomUUID(), text, sender: 'user' }]);
         setInput('');
-        setLoading(true);
-
-        try {
-            const response = await axios.get(
-                `${API_BASE}/rag/memory/ai/chat/string/client` +
-                `?message=${encodeURIComponent(text)}` +
-                `&conversationId=${encodeURIComponent(conversationId)}` +
-                `&topK=${topK}` +
-                `&similarityThreshold=${similarityThreshold}` +
-                `&mode=${mode}` +
-                `&temperature=${temperature}` +
-                `&maxTokens=${maxTokens}`
-            );
-            setMessages(prev => [...prev, { id: crypto.randomUUID(), text: response.data, sender: 'ai' }]);
-            fetchSessions();
-        } catch (error) {
-            console.error('Error fetching AI response:', error);
-            setMessages(prev => [...prev, { id: crypto.randomUUID(), text: 'Sorry, something went wrong. Please try again.', sender: 'ai' }]);
-        } finally {
-            setLoading(false);
-        }
+        const url = `${API_BASE}/rag/memory/ai/chat/string/client` +
+            `?message=${encodeURIComponent(text)}` +
+            `&conversationId=${encodeURIComponent(conversationId)}` +
+            `&topK=${topK}` +
+            `&similarityThreshold=${similarityThreshold}` +
+            `&mode=${mode}` +
+            `&temperature=${temperature}` +
+            `&maxTokens=${maxTokens}`;
+        sendMessage(text, url);
     };
 
     const startNewConversation = () => {
@@ -247,7 +236,7 @@ const RAGChatbotWithMemory = () => {
     };
 
     const handleKeyDown = (e) => {
-        if (e.key === 'Enter') sendMessage();
+        if (e.key === 'Enter') handleSend();
     };
 
     const shortId = conversationId.slice(-8);
@@ -272,7 +261,7 @@ const RAGChatbotWithMemory = () => {
                         <span className="text-xs text-gray-400">Window: last 20 msgs</span>
                         <button
                             onClick={startNewConversation}
-                            disabled={loading}
+                            disabled={streaming}
                             className="text-xs px-2 py-1 bg-indigo-500 text-white rounded hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             + New Session
@@ -307,7 +296,7 @@ const RAGChatbotWithMemory = () => {
                 </div>
 
                 <div className="border-t border-gray-100 pt-5">
-                    <ModeToggle value={mode} onChange={setMode} />
+                    <ModeToggle value={mode} onChange={setMode} disabled={streaming} />
 
                     <div className="border-t border-gray-100 pt-5">
                         <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Retrieval</p>
@@ -320,6 +309,7 @@ const RAGChatbotWithMemory = () => {
                             step={0.05}
                             onChange={setSimilarityThreshold}
                             formatValue={(v) => v.toFixed(2)}
+                            disabled={streaming}
                         />
 
                         <GradientSlider
@@ -329,6 +319,7 @@ const RAGChatbotWithMemory = () => {
                             max={20}
                             step={1}
                             onChange={setTopK}
+                            disabled={streaming}
                         />
                     </div>
 
@@ -343,6 +334,7 @@ const RAGChatbotWithMemory = () => {
                             step={0.1}
                             onChange={setTemperature}
                             formatValue={(v) => v.toFixed(1)}
+                            disabled={streaming}
                         />
 
                         <GradientSlider
@@ -352,6 +344,7 @@ const RAGChatbotWithMemory = () => {
                             max={2000}
                             step={100}
                             onChange={setMaxTokens}
+                            disabled={streaming}
                         />
                     </div>
                 </div>
@@ -369,7 +362,6 @@ const RAGChatbotWithMemory = () => {
             {/* Right — Chat area */}
             <div className="flex flex-col flex-1 p-6 min-w-0">
 
-                {/* Summary banner */}
                 <div className="mb-3 px-4 py-3 bg-white rounded-xl shadow-sm border-l-4 border-purple-400 flex-shrink-0">
                     <p className="text-sm font-semibold text-purple-600 mb-0.5">RAG-Powered Chat with Memory</p>
                     <p className="text-xs text-gray-500 leading-relaxed">
@@ -384,6 +376,7 @@ const RAGChatbotWithMemory = () => {
                     ref={chatboxRef}
                     role="log"
                     aria-live="polite"
+                    aria-atomic="false"
                 >
                     {messages.length === 0 && (
                         <div className="flex items-center justify-center h-full">
@@ -406,18 +399,15 @@ const RAGChatbotWithMemory = () => {
                                 }`}
                             >
                                 {msg.text}
+                                {msg.streaming && (
+                                    <span className="inline-block w-0.5 h-4 bg-gray-500 ml-0.5 align-middle animate-pulse" />
+                                )}
                             </div>
                             {msg.sender === 'user' && (
                                 <img src="/user-icon.png" alt="User Avatar" className="w-10 h-10 rounded-full ml-2.5 flex-shrink-0" />
                             )}
                         </div>
                     ))}
-                    {loading && (
-                        <div className="flex items-start">
-                            <img src="/ai-assistant.png" alt="AI Avatar" className="w-10 h-10 rounded-full mr-2.5 flex-shrink-0" />
-                            <div className="max-w-[80%] px-3 py-2.5 rounded-xl text-base bg-gray-200 text-black my-1.5">...</div>
-                        </div>
-                    )}
                 </div>
 
                 <div className="flex items-center mt-4">
@@ -427,12 +417,12 @@ const RAGChatbotWithMemory = () => {
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={handleKeyDown}
                         placeholder="Type your message..."
-                        disabled={loading}
+                        disabled={streaming}
                         className="flex-1 p-2.5 border border-gray-300 rounded text-base mr-2.5 focus:outline-none focus:border-purple-400 disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                     <button
-                        onClick={sendMessage}
-                        disabled={loading}
+                        onClick={handleSend}
+                        disabled={streaming}
                         aria-label="Send message"
                         className="bg-purple-500 text-white border-none rounded p-2.5 px-4 cursor-pointer text-base flex justify-center items-center hover:bg-purple-600 active:bg-purple-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
                     >

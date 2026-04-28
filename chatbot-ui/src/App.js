@@ -5,6 +5,7 @@ import ChatBot from './ChatBot';
 import VectorSearch from './VectorSearch';
 import DocumentUpload from './DocumentUpload';
 import ToolAgent from './ToolAgent';
+import StructuredOutput from './StructuredOutput';
 
 function App() {
     const [tab, setTab] = useState('chat');
@@ -39,6 +40,9 @@ function App() {
                     <button className={tabClass('tools')} onClick={() => setTab('tools')}>
                         🔧 Tool Agent
                     </button>
+                    <button className={tabClass('structured')} onClick={() => setTab('structured')}>
+                        📊 Structured
+                    </button>
                 </div>
             </nav>
             <div className="flex-1 overflow-hidden">
@@ -48,6 +52,7 @@ function App() {
                 {tab === 'rag-memory' && <RAGChatbotWithMemory />}
                 {tab === 'docs' && <DocumentUpload />}
                 {tab === 'tools' && <ToolAgent />}
+                {tab === 'structured' && <StructuredOutput />}
             </div>
         </div>
     );
