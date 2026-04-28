@@ -71,13 +71,18 @@ public class RagService {
                     : RagContext.noSystemPrompt();
         }
 
+        List<String> sources = hits.stream()
+                .map(doc -> doc.getMetadata().getOrDefault("filename", "unknown").toString())
+                .distinct()
+                .toList();
+
         String context = hits.stream()
                 .map(Document::getText)
                 .collect(Collectors.joining("\n\n---\n\n"));
 
         String prompt = (strict ? STRICT_PROMPT : SOFT_PROMPT).replace("{context}", context);
         log.debug("RAG [{}] {}", mode, prompt);
-        return RagContext.withPrompt(prompt);
+        return RagContext.withPrompt(prompt, sources);
     }
 
     /**
@@ -158,15 +163,15 @@ public class RagService {
         }
     }
 
-    public record RagContext(String systemPrompt, boolean shortCircuit, String shortCircuitMessage) {
-        static RagContext withPrompt(String systemPrompt) {
-            return new RagContext(systemPrompt, false, null);
+    public record RagContext(String systemPrompt, boolean shortCircuit, String shortCircuitMessage, List<String> sources) {
+        static RagContext withPrompt(String systemPrompt, List<String> sources) {
+            return new RagContext(systemPrompt, false, null, sources);
         }
         static RagContext noSystemPrompt() {
-            return new RagContext(null, false, null);
+            return new RagContext(null, false, null, List.of());
         }
         static RagContext shortCircuit(String message) {
-            return new RagContext(null, true, message);
+            return new RagContext(null, true, message, List.of());
         }
     }
 
