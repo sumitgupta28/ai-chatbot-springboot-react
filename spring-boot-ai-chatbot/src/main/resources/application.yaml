@@ -47,6 +47,8 @@ app:
   chunking:
     tiny-threshold: 600         # chars below this → tiny strategy (receipts, notes)
     small-threshold: 3000       # chars below this → small strategy (invoices, short reports)
+  weather:
+    api-key: ${VISUAL_CROSSING_API_KEY:}
 
 logging:
   level:
