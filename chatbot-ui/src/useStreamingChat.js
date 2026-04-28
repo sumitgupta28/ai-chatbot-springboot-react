@@ -64,8 +64,7 @@ export function useStreamingChat({ onComplete } = {}) {
                 for (const part of parts) {
                     for (const line of part.split('\n')) {
                         if (line.startsWith('data:')) {
-                            // SSE spec: "data: value" (space optional); strip prefix robustly
-                            appendToken(line.slice(5).replace(/^ /, ''));
+                            appendToken(line.slice(5));
                         }
                     }
                 }
@@ -76,7 +75,7 @@ export function useStreamingChat({ onComplete } = {}) {
             if (trailing) buffer += trailing;
             if (buffer) {
                 for (const line of buffer.split('\n')) {
-                    if (line.startsWith('data:')) appendToken(line.slice(5).replace(/^ /, ''));
+                    if (line.startsWith('data:')) appendToken(line.slice(5));
                 }
             }
 
