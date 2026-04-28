@@ -89,7 +89,18 @@ The active RAG endpoint accepts per-request tuning parameters (all optional with
 ### RAG Chat with Memory — `RagMemoryChatController`
 - `GET /rag/memory/ai/chat/string/client` — **active endpoint** used by the **RAG + Memory** tab; same RAG tuning params as above plus:
   - `conversationId` *(required)* — UUID string from the browser; scopes conversation history
+- `POST /rag/memory/ai/chat/json/client` — same as above but returns a `RagChatResponse` JSON object (answer, conversationId, ragContextUsed, mode, sources)
 - `DELETE /rag/memory/ai/chat/conversation/{conversationId}` — clears all stored history for a conversation (called when the user clicks "New Chat")
+- `GET /rag/memory/conversations` — lists all past conversations (conversationId, startedAt, lastActivity, messageCount, preview)
+- `GET /rag/memory/conversations/{conversationId}/messages` — returns stored messages for a conversation
+
+### Tool-Augmented Chat — `ToolChatController`
+- `GET /tool/ai/chat/string` — chat with function-calling tools enabled; **requires Anthropic profile**
+  - Available tools: calculator (add/subtract/multiply/divide), `getCurrentDateTime`, `getWeather` (mock data for 7 cities)
+
+### Structured Output — `StructuredOutputController`
+- `GET /structured/extract` — extracts named entities and returns typed JSON; **requires Anthropic profile**
+  - Returns: `EntityExtractionResult` with fields: people, organizations, locations, dates, topics
 
 ### Documents — `DocumentController`
 - `POST /documents/upload` — multipart file upload (PDF, TXT, DOCX); chunks, embeds, and stores in PGVector
@@ -105,8 +116,10 @@ The active RAG endpoint accepts per-request tuning parameters (all optional with
 | 💬 Chat | `ChatBot.js` | `GET /ai/chat/string` |
 | 🗄️ Vector Search | `VectorSearch.js` | `GET /documents/verify`, `GET /documents/verify/search` |
 | 🔍 RAG Chat | `RAGChatbot.js` | `GET /rag/ai/chat/string/client` |
-| 🧠 RAG + Memory | `RAGChatbotWithMemory.js` | `GET /rag/memory/ai/chat/string/client`, `DELETE /rag/memory/ai/chat/conversation/{id}` |
+| 🧠 RAG + Memory | `RAGChatbotWithMemory.js` | `GET /rag/memory/ai/chat/string/client`, `DELETE /rag/memory/ai/chat/conversation/{id}`, `GET /rag/memory/conversations`, `GET /rag/memory/conversations/{id}/messages` |
 | 📄 Documents | `DocumentUpload.js` | `GET /documents`, `POST /documents/upload`, `DELETE /documents/{id}` |
+| 🔧 Tool Agent | `ToolAgent.js` | `GET /tool/ai/chat/string` |
+| 📊 Structured Output | `StructuredOutput.js` | `GET /structured/extract` |
 
 ## Key architecture notes
 
@@ -121,6 +134,9 @@ The active RAG endpoint accepts per-request tuning parameters (all optional with
 - The React app makes a **single non-streaming GET request** via axios. Switching to true SSE streaming would require `EventSource` or `fetch` with a `ReadableStream` in the chat components.
 - All Java classes use Lombok `@Slf4j` for logging.
 - There are **two `ChatClient` beans**: `chatClient` (plain, used by `RagChatController`) and `memoryChatClient` (wired with `MessageChatMemoryAdvisor`, used by `RagMemoryChatController`). Inject by name with `@Qualifier` to avoid ambiguity.
+- **Tool-augmented chat**: `ToolChatController` wires `BuiltInTools` function definitions into the ChatClient request at call time. Function calling requires a model that supports it natively — only works with the Anthropic profile.
+- **Structured output**: `StructuredOutputController` uses Spring AI's `BeanOutputConverter<EntityExtractionResult>` to inject a JSON schema into the prompt and parse the response into a typed record. Best results with the Anthropic profile.
+- **Adaptive chunking**: `IngestionService` selects chunk parameters based on extracted text length (thresholds from `ChunkingProperties`): tiny docs (<600 chars) → 128 tokens/15 overlap; small docs (<3000 chars) → 256/30; medium/large docs → 512/2000.
 
 ## RAG configuration defaults
 
@@ -141,25 +157,33 @@ in.ai.chatbot.config
 ├── config/
 │   ├── WebConfig.java              # CORS
 │   ├── EmbeddingConfig.java        # TransformersEmbeddingModel bean (@Primary)
-│   └── RagProperties.java          # @ConfigurationProperties for app.rag.*
+│   ├── RagProperties.java          # @ConfigurationProperties for app.rag.*
+│   └── ChunkingProperties.java     # @ConfigurationProperties for adaptive chunk thresholds
 ├── controller/
 │   ├── ChatController.java         # /ai/chat and /ai/chat/string (RAG-free)
 │   ├── RagChatController.java      # /rag/ai/chat/* (RAG-augmented, active: /string/client)
 │   ├── RagMemoryChatController.java # /rag/memory/ai/chat/* (RAG + conversation memory)
-│   └── DocumentController.java     # /documents/* including /verify and /verify/search
+│   ├── DocumentController.java     # /documents/* including /verify and /verify/search
+│   ├── ToolChatController.java     # /tool/ai/chat/string (function calling, Anthropic only)
+│   └── StructuredOutputController.java # /structured/extract (entity extraction, Anthropic only)
 ├── memory/
 │   └── JdbcChatMemoryRepository.java # implements ChatMemoryRepository via JPA (PostgreSQL-backed)
 ├── model/
 │   ├── DocumentInfo.java           # record returned by document list endpoint
 │   ├── DocumentMetadata.java       # JPA entity for document_metadata table
-│   └── ConversationMessage.java    # JPA entity for conversation_messages table
+│   ├── ConversationMessage.java    # JPA entity for conversation_messages table
+│   ├── RagChatResponse.java        # response record for the JSON memory endpoint
+│   ├── ConversationSummary.java    # conversation list item (id, timestamps, count, preview)
+│   └── EntityExtractionResult.java # structured output schema (people, orgs, locations, dates, topics)
 ├── repository/
 │   ├── DocumentMetadataRepository.java
 │   └── ConversationMessageRepository.java
-└── service/
-    ├── RagService.java             # similarity search, prompt augmentation, vector store queries
-    ├── RagMemoryService.java       # delegates to RagService; exposes clearConversation()
-    └── IngestionService.java       # document parsing, chunking, vector storage
+├── service/
+│   ├── RagService.java             # similarity search, prompt augmentation, vector store queries
+│   ├── RagMemoryService.java       # delegates to RagService; exposes clearConversation(), listConversations(), getConversationMessages()
+│   └── IngestionService.java       # document parsing, adaptive chunking, vector storage
+└── tools/
+    └── BuiltInTools.java           # function definitions for ToolChatController (calculator, date/time, weather)
 ```
 
 ## Conversation memory
