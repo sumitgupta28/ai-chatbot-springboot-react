@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @RestController
@@ -55,5 +56,10 @@ public class ProductController {
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         ingestionService.deleteProduct(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/verify")
+    public Map<String, Object> verify() {
+        return searchService.verifyProductStore();
     }
 }

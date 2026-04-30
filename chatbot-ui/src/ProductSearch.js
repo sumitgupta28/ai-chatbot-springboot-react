@@ -142,6 +142,10 @@ export default function ProductSearch() {
     const [similarityThreshold, setSimilarityThreshold] = useState(0.0);
     const [topK, setTopK] = useState(12);
 
+    const [healthOpen, setHealthOpen] = useState(false);
+    const [health, setHealth] = useState(null);
+    const [healthLoading, setHealthLoading] = useState(false);
+
     const handleDrop = (e) => {
         e.preventDefault();
         setDragOver(false);
@@ -204,6 +208,19 @@ export default function ProductSearch() {
         if (e.key === 'Enter') handleSearch();
     };
 
+    const checkHealth = async () => {
+        setHealthLoading(true);
+        setHealth(null);
+        try {
+            const res = await axios.get(`${API_BASE}/products/verify`);
+            setHealth(res.data);
+        } catch {
+            setHealth({ status: 'error', productCount: 0, products: [] });
+        } finally {
+            setHealthLoading(false);
+        }
+    };
+
     return (
         <div className="flex h-full bg-gray-100 overflow-hidden">
 
@@ -248,6 +265,101 @@ export default function ProductSearch() {
             {/* Right — Main content */}
             <div className="flex-1 overflow-y-auto p-6 min-w-0">
                 <div className="max-w-4xl mx-auto space-y-6">
+
+                    {/* Vector Store Health — collapsible */}
+                    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+                        <div className="flex items-center justify-between px-6 py-4">
+                            <div>
+                                <h2 className="text-sm font-bold text-gray-700">Vector Store Health</h2>
+                                <p className="text-xs text-gray-400 mt-0.5">Check all indexed products currently in the vector store</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={checkHealth}
+                                    disabled={healthLoading}
+                                    className="bg-indigo-500 text-white text-xs font-medium px-4 py-2 rounded-lg hover:bg-indigo-600 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    {healthLoading ? 'Checking…' : 'Check Store'}
+                                </button>
+                                <button
+                                    onClick={() => setHealthOpen(o => !o)}
+                                    className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
+                                    aria-label={healthOpen ? 'Collapse' : 'Expand'}
+                                >
+                                    <svg
+                                        className={`w-4 h-4 transition-transform duration-200 ${healthOpen ? 'rotate-180' : ''}`}
+                                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                    >
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        {healthOpen && (
+                            <div className="border-t border-gray-100 px-6 pb-5 pt-4">
+                                {!health && !healthLoading && (
+                                    <p className="text-xs text-gray-400 text-center py-6">
+                                        Click <strong>Check Store</strong> to inspect the product vector database.
+                                    </p>
+                                )}
+
+                                {healthLoading && (
+                                    <div className="flex justify-center py-6">
+                                        <div className="w-5 h-5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                                    </div>
+                                )}
+
+                                {health && (
+                                    <>
+                                        <div className="flex items-center gap-6 mb-4 px-4 py-3 bg-gray-50 rounded-lg">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-gray-500">Status</span>
+                                                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                                                    health.status === 'ok' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
+                                                }`}>
+                                                    {health.status === 'ok' ? '✅' : '❌'} {health.status}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-gray-500">Products indexed</span>
+                                                <span className="text-sm font-bold text-indigo-600">{health.productCount}</span>
+                                            </div>
+                                        </div>
+
+                                        {health.products?.length > 0 ? (
+                                            <div className="overflow-hidden rounded-lg border border-gray-100">
+                                                <table className="w-full text-sm border-collapse bg-white">
+                                                    <thead>
+                                                        <tr>
+                                                            {['Product ID', 'Name', 'Embedding Preview'].map((h, i) => (
+                                                                <th key={i} className="text-left px-3.5 py-2.5 text-xs font-semibold text-gray-500 bg-gray-50 border-b border-gray-100">
+                                                                    {h}
+                                                                </th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {health.products.map((p, i) => (
+                                                            <tr key={i} className="border-b border-gray-50 last:border-b-0 hover:bg-indigo-50/30">
+                                                                <td className="px-3.5 py-2.5 font-mono text-xs text-gray-500 whitespace-nowrap">{p.productId}</td>
+                                                                <td className="px-3.5 py-2.5 font-medium text-gray-700 whitespace-nowrap">{p.name}</td>
+                                                                <td className="px-3.5 py-2.5 text-gray-400 text-xs max-w-xs truncate">{p.contentPreview}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                                                No products found in the vector store. Upload an XLS file first.
+                                            </p>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        )}
+                    </div>
 
                     {/* Upload Section */}
                     <div className="bg-white rounded-xl shadow-sm p-6">

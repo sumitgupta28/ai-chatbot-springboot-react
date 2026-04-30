@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 @Slf4j
@@ -51,5 +52,30 @@ public class ProductSearchService {
                 })
                 .filter(Objects::nonNull)
                 .toList();
+    }
+
+    public Map<String, Object> verifyProductStore() {
+        try {
+            List<Document> docs = productVectorStore.similaritySearch(
+                    SearchRequest.builder()
+                            .query("product")
+                            .topK(1000)
+                            .similarityThreshold(0.0)
+                            .build()
+            );
+            List<Map<String, Object>> items = docs.stream().map(doc -> {
+                String productId = doc.getMetadata().getOrDefault("product_id", "unknown").toString();
+                String text = doc.getText() != null ? doc.getText() : "";
+                String preview = text.substring(0, Math.min(120, text.length()));
+                String name = productRepository.findByProductId(productId)
+                        .map(p -> p.getName())
+                        .orElse("Unknown");
+                return Map.<String, Object>of("productId", productId, "name", name, "contentPreview", preview);
+            }).toList();
+            return Map.of("status", "ok", "productCount", docs.size(), "products", items);
+        } catch (Exception e) {
+            log.error("Product vector store health check failed: {}", e.getMessage());
+            return Map.of("status", "error", "productCount", 0, "products", List.of());
+        }
     }
 }
