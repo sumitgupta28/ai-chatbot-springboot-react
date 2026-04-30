@@ -96,7 +96,15 @@ public class ProductIngestionService {
                 nvl(saved.getName()), nvl(saved.getCategory()), nvl(saved.getBrand()),
                 nvl(saved.getDescription()), saved.getPrice());
 
-        Document doc = new Document(embeddingText, Map.of("product_id", saved.getProductId()));
+        // Add metadata for filtering
+        Map<String, Object> metadata = Map.of(
+                "product_id", saved.getProductId(),
+                "category", saved.getCategory(), // Example static category
+                "price", Double.parseDouble(saved.getPrice().toString()),
+                "brand", saved.getBrand()
+        );
+
+        Document doc = new Document(embeddingText, metadata);
         productVectorStore.add(List.of(doc));
         log.debug("Indexed product '{}' into product_vector_store", saved.getProductId());
     }
@@ -130,6 +138,7 @@ public class ProductIngestionService {
         String priceStr = getCell(row, colIndex, "Price");
         BigDecimal price;
         try {
+            assert priceStr != null;
             price = new BigDecimal(priceStr.replaceAll("[^\\d.]", ""));
         } catch (Exception e) {
             throw new IllegalArgumentException("Invalid price: " + priceStr);
