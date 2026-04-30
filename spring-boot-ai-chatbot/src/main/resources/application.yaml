@@ -1,6 +1,25 @@
 spring:
   application:
     name: "Spring Boot ChatBot"
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ragdb
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: false
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: 0
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
   ai:
     model:
       chat: ollama
@@ -10,6 +29,24 @@ spring:
         options:
           model: "llama3.2"
           temperature: 0.7
+      embedding:
+        options:
+          model: "nomic-embed-text"
+    vectorstore:
+      pgvector:
+        initialize-schema: false
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 384  # Fixed: all-MiniLM-L6-v2 produces 384 dimensions, not 768
+
+app:
+  rag:
+    mode: soft                  # Changed: 'soft' allows fallback to general knowledge
+    top-k: 5
+    similarity-threshold: 0.0   # Lowered: 0.3 is more permissive for semantic search
+  chunking:
+    tiny-threshold: 600         # chars below this → tiny strategy (receipts, notes)
+    small-threshold: 3000       # chars below this → small strategy (invoices, short reports)
 
 logging:
   level:

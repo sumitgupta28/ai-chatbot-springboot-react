@@ -1,29 +1,23 @@
 package in.ai.chatbot.config.controller;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 
+@Slf4j
 @RestController
+@RequiredArgsConstructor
 public class ChatController {
 
-    private static final Logger log = LoggerFactory.getLogger(ChatController.class);
-
     private final ChatModel chatModel;
-
-    @Autowired
-    public ChatController(ChatModel chatModel) {
-        this.chatModel = chatModel;
-        log.debug("ChatController initialized with model: {}", chatModel.getClass().getSimpleName());
-    }
 
     @GetMapping("/ai/chat")
     public Flux<ChatResponse> generateStream(@RequestParam(value = "message", defaultValue = "Tell me a joke") String message) {
@@ -39,7 +33,7 @@ public class ChatController {
                 .doOnError(e -> log.debug("[/ai/chat] Stream error: {}", e.getMessage()));
     }
 
-    @GetMapping("/ai/chat/string")
+    @GetMapping(value = "/ai/chat/string", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> generateString(@RequestParam(value = "message", defaultValue = "Tell me a joke") String message) {
         log.debug("[/ai/chat/string] Incoming message: '{}'", message);
         Prompt prompt = new Prompt(new UserMessage(message));
