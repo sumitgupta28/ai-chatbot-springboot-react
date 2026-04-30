@@ -6,6 +6,7 @@ import VectorSearch from './VectorSearch';
 import DocumentUpload from './DocumentUpload';
 import ToolAgent from './ToolAgent';
 import StructuredOutput from './StructuredOutput';
+import ProductSearch from './ProductSearch';
 
 function App() {
     const [tab, setTab] = useState('chat');
@@ -43,6 +44,9 @@ function App() {
                     <button className={tabClass('structured')} onClick={() => setTab('structured')}>
                         📊 Structured
                     </button>
+                    <button className={tabClass('products')} onClick={() => setTab('products')}>
+                        🛍️ Product Search
+                    </button>
                 </div>
             </nav>
             <div className="flex-1 overflow-hidden">
@@ -53,6 +57,7 @@ function App() {
                 {tab === 'docs' && <DocumentUpload />}
                 {tab === 'tools' && <ToolAgent />}
                 {tab === 'structured' && <StructuredOutput />}
+                {tab === 'products' && <ProductSearch />}
             </div>
         </div>
     );
