@@ -7,6 +7,7 @@ import DocumentUpload from './DocumentUpload';
 import ToolAgent from './ToolAgent';
 import StructuredOutput from './StructuredOutput';
 import ProductSearch from './ProductSearch';
+import ChunkingLab from './ChunkingLab';
 
 function App() {
     const [tab, setTab] = useState('chat');
@@ -47,6 +48,9 @@ function App() {
                     <button className={tabClass('products')} onClick={() => setTab('products')}>
                         🛍️ Product Search
                     </button>
+                    <button className={tabClass('chunking')} onClick={() => setTab('chunking')}>
+                        🧪 Chunking Lab
+                    </button>
                 </div>
             </nav>
             <div className="flex-1 overflow-hidden">
@@ -58,6 +62,7 @@ function App() {
                 {tab === 'tools' && <ToolAgent />}
                 {tab === 'structured' && <StructuredOutput />}
                 {tab === 'products' && <ProductSearch />}
+                {tab === 'chunking' && <ChunkingLab />}
             </div>
         </div>
     );
