@@ -247,3 +247,6 @@ History is stored in the `conversation_messages` PostgreSQL table (added in Flyw
 ...
 [UserMessage: current message]
 ```
+
+### Mermaid JS syntax
+- Always output diagrams using Mermaid JS syntax. Use Mermaid for flowcharts, sequence diagrams, and class diagrams
