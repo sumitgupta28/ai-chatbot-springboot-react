@@ -20,3 +20,4 @@ chatbot-ui/build/
 # OS
 .DS_Store
 /bill-data-generator/output/
+/tools/.venv/

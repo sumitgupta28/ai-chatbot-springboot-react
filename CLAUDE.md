@@ -102,6 +102,14 @@ The active RAG endpoint accepts per-request tuning parameters (all optional with
 - `GET /structured/extract` — extracts named entities and returns typed JSON; **requires Anthropic profile**
   - Returns: `EntityExtractionResult` with fields: people, organizations, locations, dates, topics
 
+### Product Search — `ProductController`
+- `POST /products/upload` — multipart `.xlsx` upload; parses with Apache POI, upserts relational rows in `product` table, and embeds each product into `product_vector_store`
+- `GET /products` — list all indexed products ordered by `created_at` desc → `List<ProductInfo>`
+- `GET /products/search?query=&topK=10&threshold=0.0` — semantic similarity search on `product_vector_store`; returns `List<ProductInfo>` ordered by vector similarity
+- `DELETE /products/{id}` — removes the product row and its vector from `product_vector_store`
+
+XLS column contract (first row = headers): `ProductID | Name | Category | Brand | Description | Price | ImageUrl | Rating | StockCount`
+
 ### Documents — `DocumentController`
 - `POST /documents/upload` — multipart file upload (PDF, TXT, DOCX); chunks, embeds, and stores in PGVector
 - `GET /documents` — list all indexed documents with metadata
@@ -120,6 +128,7 @@ The active RAG endpoint accepts per-request tuning parameters (all optional with
 | 📄 Documents | `DocumentUpload.js` | `GET /documents`, `POST /documents/upload`, `DELETE /documents/{id}` |
 | 🔧 Tool Agent | `ToolAgent.js` | `GET /tool/ai/chat/string` |
 | 📊 Structured Output | `StructuredOutput.js` | `GET /structured/extract` |
+| 🛍️ Product Search | `ProductSearch.js` | `POST /products/upload`, `GET /products/search`, `DELETE /products/{id}` |
 
 ## Key architecture notes
 
@@ -136,6 +145,7 @@ The active RAG endpoint accepts per-request tuning parameters (all optional with
 - There are **two `ChatClient` beans**: `chatClient` (plain, used by `RagChatController`) and `memoryChatClient` (wired with `MessageChatMemoryAdvisor`, used by `RagMemoryChatController`). Inject by name with `@Qualifier` to avoid ambiguity.
 - **Tool-augmented chat**: `ToolChatController` wires `BuiltInTools` function definitions into the ChatClient request at call time. Function calling requires a model that supports it natively — only works with the Anthropic profile.
 - **Structured output**: `StructuredOutputController` uses Spring AI's `BeanOutputConverter<EntityExtractionResult>` to inject a JSON schema into the prompt and parse the response into a typed record. Best results with the Anthropic profile.
+- **Product semantic search**: `ProductController` / `ProductIngestionService` / `ProductSearchService` handle a fully separate product catalog. Products are stored relationally in the `product` table and embedded into a dedicated `product_vector_store` table (separate HNSW index, not shared with document chunks). `ProductVectorStoreConfig` manually constructs a second `PgVectorStore` bean (`@Qualifier("productVectorStore")`) with `vectorTableName("product_vector_store")`. Deletion removes rows from both tables — native query `DELETE FROM product_vector_store WHERE metadata->>'product_id' = :productId` plus JPA delete on `product`.
 - **Adaptive chunking**: `IngestionService` selects chunk parameters based on extracted text length (thresholds from `ChunkingProperties`): tiny docs (<600 chars) → 128 tokens/15 overlap; small docs (<3000 chars) → 256/30; medium/large docs → 512/2000.
 
 ## RAG configuration defaults
@@ -185,6 +195,40 @@ in.ai.chatbot.config
 └── tools/
     └── BuiltInTools.java           # function definitions for ToolChatController (calculator, date/time, weather)
 ```
+
+New files added for product search:
+
+```
+├── config/
+│   └── ProductVectorStoreConfig.java   # second PgVectorStore bean → product_vector_store table
+├── controller/
+│   └── ProductController.java          # /products/* (upload, list, search, delete)
+├── model/
+│   ├── Product.java                    # JPA entity for product table
+│   ├── ProductInfo.java                # DTO record returned by list/search endpoints
+│   └── ProductUploadResult.java        # DTO record: imported, skipped, errors
+├── repository/
+│   └── ProductRepository.java          # JpaRepository<Product, Long>
+└── service/
+    ├── ProductIngestionService.java     # Apache POI XLS parsing → upsert product + embed into product_vector_store
+    └── ProductSearchService.java        # similarity search on product_vector_store → ProductInfo list
+```
+
+## Product catalog database
+
+Added in Flyway migration `V3__add_product_catalog.sql`:
+
+```sql
+-- Relational product data
+product (id, product_id UNIQUE, name, category, brand, description, price, image_url, rating, stock_count, created_at, updated_at)
+
+-- Dedicated vector store (same structure as vector_store, separate HNSW index)
+product_vector_store (id UUID, content TEXT, metadata JSON, embedding VECTOR(384))
+```
+
+Each product is embedded as: `"Product: {name}. Category: {category}. Brand: {brand}. Description: {description}. Price: ${price}."` — the full text string the embedding model encodes for similarity search.
+
+A sample 100-product `.xlsx` file (`sample_products.xlsx`) and the Python script that generated it (`tools/generate_products.py`) live in the project root. Re-run `python3 tools/generate_products.py` to regenerate.
 
 ## Conversation memory
 
